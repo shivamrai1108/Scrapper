@@ -164,13 +164,15 @@ def index():
                     <div class="form-row">
                         <div class="form-group">
                             <label for="keywords">Keywords (one per line)</label>
-                            <textarea id="keywords" name="keywords" placeholder="Python
-artificial intelligence
-machine learning" required></textarea>
+                            <textarea id="keywords" name="keywords" placeholder="Gong
+fathom
+HubSpot
+Salesforce" required></textarea>
                         </div>
                         <div class="form-group half">
                             <label for="subreddit">Subreddit</label>
-                            <input type="text" id="subreddit" name="subreddit" value="all" placeholder="all or specific subreddit">
+                            <input type="text" id="subreddit" name="subreddit" value="all" placeholder="all, saas, startups, entrepreneur">
+                            <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Enter 'all' for all Reddit or specific subreddit name (e.g., 'saas', 'startups')</small>
                         </div>
                     </div>
                     
@@ -321,20 +323,23 @@ machine learning" required></textarea>
                 
                 // Show appropriate loading message based on search size
                 const maxResults = parseInt(document.getElementById('max_results').value);
+                const subredditValue = document.getElementById('subreddit').value.trim() || 'all';
                 const loadingText = document.getElementById('loadingText');
                 const loadingSubtext = document.getElementById('loadingSubtext');
                 const progressInfo = document.getElementById('progressInfo');
                 
+                const subredditDisplay = subredditValue.toLowerCase() === 'all' ? 'all of Reddit' : `r/${subredditValue}`;
+                
                 if (maxResults >= 1000) {
                     loadingText.textContent = 'Processing large search request...';
-                    loadingSubtext.textContent = `Searching for ${maxResults.toLocaleString()} posts with comprehensive analysis.`;
+                    loadingSubtext.textContent = `Searching ${subredditDisplay} for ${maxResults.toLocaleString()} posts with comprehensive analysis.`;
                     progressInfo.style.display = 'block';
                 } else if (maxResults >= 250) {
                     loadingText.textContent = 'Searching Reddit and analyzing data...';
-                    loadingSubtext.textContent = `Processing ${maxResults} posts with sentiment and engagement analysis.`;
+                    loadingSubtext.textContent = `Processing ${maxResults} posts from ${subredditDisplay} with sentiment and engagement analysis.`;
                     progressInfo.style.display = 'none';
                 } else {
-                    loadingText.textContent = 'Searching Reddit...';
+                    loadingText.textContent = `Searching ${subredditDisplay}...`;
                     loadingSubtext.textContent = 'Quick search in progress.';
                     progressInfo.style.display = 'none';
                 }
@@ -388,7 +393,8 @@ machine learning" required></textarea>
                 if (downloadSection) {
                     downloadSection.style.display = 'block';
                 }
-                showAlert('success', `🎉 Found ${data.total_posts} posts! Analysis complete. Click download to get Excel file.`);
+                const subredditText = data.subreddit_searched ? ` in ${data.subreddit_searched}` : '';
+                showAlert('success', `🎉 Found ${data.total_posts} posts${subredditText}! Analysis complete. Click download to get Excel file.`);
             }
             
             function displayMetrics(data) {
@@ -619,13 +625,33 @@ def api_advanced_search():
         if not reddit:
             return jsonify({'success': False, 'error': 'Reddit API connection failed'})
         
-        # Search posts
+        # Build search query
         search_query = ' OR '.join(keywords)
         
-        if subreddit.lower() == 'all':
-            subreddit_obj = reddit.subreddit('all')
-        else:
-            subreddit_obj = reddit.subreddit(subreddit)
+        # Handle subreddit selection with validation
+        try:
+            if subreddit.lower() == 'all':
+                subreddit_obj = reddit.subreddit('all')
+                subreddit_display = 'all of Reddit'
+            else:
+                # Clean subreddit name (remove r/ if present)
+                clean_subreddit = subreddit.replace('r/', '').replace('R/', '').strip()
+                subreddit_obj = reddit.subreddit(clean_subreddit)
+                
+                # Test if subreddit exists by trying to access its display_name
+                try:
+                    _ = subreddit_obj.display_name
+                    subreddit_display = f'r/{clean_subreddit}'
+                except Exception:
+                    return jsonify({
+                        'success': False, 
+                        'error': f'Subreddit "{clean_subreddit}" not found or is private. Please check the spelling.'
+                    })
+        except Exception as e:
+            return jsonify({
+                'success': False, 
+                'error': f'Invalid subreddit: {str(e)}'
+            })
         
         posts = []
         processed_count = 0
@@ -712,6 +738,7 @@ def api_advanced_search():
             'total_fetched': total_fetched,
             'processed_count': processed_count,
             'search_query': search_query,
+            'subreddit_searched': subreddit_display,
             'search_time': f"{search_time:.2f} seconds",
             'posts': posts
         })
