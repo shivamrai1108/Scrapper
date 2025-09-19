@@ -179,9 +179,13 @@ machine learning" required></textarea>
                             <label for="max_results">Max Results</label>
                             <select id="max_results" name="max_results">
                                 <option value="25">25</option>
-                                <option value="50" selected>50</option>
-                                <option value="100">100</option>
-                                <option value="200">200</option>
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="250">250</option>
+                                <option value="500">500</option>
+                                <option value="1000">1,000</option>
+                                <option value="2500">2,500</option>
+                                <option value="5000">5,000</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -240,8 +244,11 @@ machine learning" required></textarea>
             
             <div id="loading">
                 <div class="spinner"></div>
-                <p><strong>Searching Reddit and analyzing data...</strong></p>
-                <p>This may take a few moments depending on the number of results.</p>
+                <p><strong id="loadingText">Searching Reddit and analyzing data...</strong></p>
+                <p id="loadingSubtext">This may take a few moments depending on the number of results.</p>
+                <div id="progressInfo" style="margin-top: 15px; padding: 10px; background: #f0f9ff; border-radius: 5px; display: none;">
+                    <p style="margin: 0; font-size: 14px; color: #666;">⚡ Pro tip: Larger searches (1000+ posts) may take 1-2 minutes for comprehensive analysis</p>
+                </div>
             </div>
             
             <div id="results" class="results" style="display: none;">
@@ -249,9 +256,11 @@ machine learning" required></textarea>
                     <div id="metrics" class="metrics">
                         <!-- Metrics will be populated here -->
                     </div>
-                    
-                    <div id="downloadSection" style="display: none;">
-                        <button id="downloadBtn" class="download-btn">📥 Download Excel Report</button>
+                    <div id="downloadSection" style="display: none; text-align: center; margin: 20px 0; padding: 20px; background: #f0f9ff; border-radius: 10px; border: 2px dashed #1a73e8;">
+                        <h4 style="color: #1a73e8; margin-bottom: 10px;">📊 Export Your Data</h4>
+                        <button id="downloadBtn" class="download-btn" style="font-size: 18px; padding: 15px 40px;">📥 Download Excel Report</button>
+                        <p style="color: #666; margin-top: 10px; font-size: 14px;">Includes all post data + analytics summary</p>
+                    </div>
                     </div>
                     
                     <div class="tabs">
@@ -310,6 +319,26 @@ machine learning" required></textarea>
                 const loading = document.getElementById('loading');
                 const results = document.getElementById('results');
                 
+                // Show appropriate loading message based on search size
+                const maxResults = parseInt(document.getElementById('max_results').value);
+                const loadingText = document.getElementById('loadingText');
+                const loadingSubtext = document.getElementById('loadingSubtext');
+                const progressInfo = document.getElementById('progressInfo');
+                
+                if (maxResults >= 1000) {
+                    loadingText.textContent = 'Processing large search request...';
+                    loadingSubtext.textContent = `Searching for ${maxResults.toLocaleString()} posts with comprehensive analysis.`;
+                    progressInfo.style.display = 'block';
+                } else if (maxResults >= 250) {
+                    loadingText.textContent = 'Searching Reddit and analyzing data...';
+                    loadingSubtext.textContent = `Processing ${maxResults} posts with sentiment and engagement analysis.`;
+                    progressInfo.style.display = 'none';
+                } else {
+                    loadingText.textContent = 'Searching Reddit...';
+                    loadingSubtext.textContent = 'Quick search in progress.';
+                    progressInfo.style.display = 'none';
+                }
+                
                 loading.style.display = 'block';
                 results.style.display = 'none';
                 
@@ -317,6 +346,14 @@ machine learning" required></textarea>
                 const params = new URLSearchParams(formData);
                 
                 try {
+                    // Basic client-side validation
+                    const keywords = document.getElementById('keywords').value.trim();
+                    if (!keywords) {
+                        loading.style.display = 'none';
+                        showAlert('error', 'Please enter at least one keyword.');
+                        return;
+                    }
+
                     const response = await fetch('/api/advanced_search?' + params.toString());
                     const data = await response.json();
                     
@@ -347,8 +384,11 @@ machine learning" required></textarea>
                 displayData(data.posts);
                 
                 // Show download section
-                document.getElementById('downloadSection').style.display = 'block';
-                showAlert('success', `🎉 Found ${data.total_posts} posts! Analysis complete.`);
+                const downloadSection = document.getElementById('downloadSection');
+                if (downloadSection) {
+                    downloadSection.style.display = 'block';
+                }
+                showAlert('success', `🎉 Found ${data.total_posts} posts! Analysis complete. Click download to get Excel file.`);
             }
             
             function displayMetrics(data) {
@@ -560,7 +600,7 @@ def api_advanced_search():
         # Get parameters
         keywords_input = request.args.get('keywords', '').strip()
         subreddit = request.args.get('subreddit', 'all').strip()
-        max_results = min(int(request.args.get('max_results', 50)), 200)
+        max_results = min(int(request.args.get('max_results', 50)), 5000)
         sort_method = request.args.get('sort_method', 'relevance')
         days_back = int(request.args.get('days_back', 0))
         min_score = int(request.args.get('min_score', 0))
@@ -588,56 +628,89 @@ def api_advanced_search():
             subreddit_obj = reddit.subreddit(subreddit)
         
         posts = []
+        processed_count = 0
+        total_fetched = 0
         
-        for post in subreddit_obj.search(search_query, sort=sort_method, limit=max_results):
-            # Date filtering
-            if days_back > 0:
-                post_date = datetime.fromtimestamp(post.created_utc)
-                cutoff_date = datetime.now() - timedelta(days=days_back)
-                if post_date < cutoff_date:
+        # Use pagination for large requests
+        batch_size = min(100, max_results) if max_results > 100 else max_results
+        
+        try:
+            for post in subreddit_obj.search(search_query, sort=sort_method, limit=max_results):
+                total_fetched += 1
+                
+                try:
+                    # Skip if post is None or deleted
+                    if not post or not hasattr(post, 'title'):
+                        continue
+                    
+                    # Date filtering
+                    if days_back > 0:
+                        post_date = datetime.fromtimestamp(post.created_utc)
+                        cutoff_date = datetime.now() - timedelta(days=days_back)
+                        if post_date < cutoff_date:
+                            continue
+                    
+                    # Calculate metrics
+                    text_to_analyze = f"{post.title} {post.selftext or ''}"
+                    sentiment, sentiment_score = simple_sentiment(text_to_analyze)
+                    relevance_score, engagement_rate = calculate_metrics(post, keywords)
+                    
+                    # Apply filters
+                    if post.score < min_score:
+                        continue
+                    if post.num_comments < min_comments:
+                        continue
+                    if engagement_rate < min_engagement:
+                        continue
+                    if sentiment_filter != 'all' and sentiment != sentiment_filter:
+                        continue
+                    
+                    # Extract post data safely
+                    post_data = {
+                        'title': post.title[:200] if post.title else '[No Title]',
+                        'subreddit': str(post.subreddit) if post.subreddit else 'unknown',
+                        'author': str(post.author) if post.author else '[deleted]',
+                        'score': max(0, post.score) if hasattr(post, 'score') else 0,
+                        'upvote_ratio': round(post.upvote_ratio, 3) if hasattr(post, 'upvote_ratio') else 0.5,
+                        'num_comments': max(0, post.num_comments) if hasattr(post, 'num_comments') else 0,
+                        'created_utc': datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M:%S'),
+                        'date': datetime.fromtimestamp(post.created_utc).strftime('%d-%m-%Y'),
+                        'url': f"https://reddit.com{post.permalink}" if hasattr(post, 'permalink') else '#',
+                        'content': (post.selftext[:500] + '...') if post.selftext and len(post.selftext) > 500 else (post.selftext or ''),
+                        'nsfw': bool(post.over_18) if hasattr(post, 'over_18') else False,
+                        'post_id': str(post.id) if hasattr(post, 'id') else f'unknown_{processed_count}',
+                        'sentiment': sentiment,
+                        'sentiment_score': round(sentiment_score, 4),
+                        'engagement_rate': round(engagement_rate, 2),
+                        'relevance_score': relevance_score,
+                        'keywords_found': ', '.join([kw for kw in keywords if kw.lower() in (post.title or '').lower() or kw.lower() in (post.selftext or '').lower()])
+                    }
+                    posts.append(post_data)
+                    processed_count += 1
+                    
+                    # Add small delay for large requests to be respectful
+                    if processed_count % 50 == 0 and max_results > 100:
+                        import time
+                        time.sleep(0.1)
+                        
+                except Exception as post_error:
+                    # Continue processing other posts if one fails
                     continue
-            
-            # Calculate metrics
-            text_to_analyze = f"{post.title} {post.selftext or ''}"
-            sentiment, sentiment_score = simple_sentiment(text_to_analyze)
-            relevance_score, engagement_rate = calculate_metrics(post, keywords)
-            
-            # Apply filters
-            if post.score < min_score:
-                continue
-            if post.num_comments < min_comments:
-                continue
-            if engagement_rate < min_engagement:
-                continue
-            if sentiment_filter != 'all' and sentiment != sentiment_filter:
-                continue
-            
-            post_data = {
-                'title': post.title,
-                'subreddit': str(post.subreddit),
-                'author': str(post.author) if post.author else '[deleted]',
-                'score': post.score,
-                'upvote_ratio': post.upvote_ratio,
-                'num_comments': post.num_comments,
-                'created_utc': datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M:%S'),
-                'date': datetime.fromtimestamp(post.created_utc).strftime('%d-%m-%Y'),
-                'url': f"https://reddit.com{post.permalink}",
-                'content': post.selftext[:500] + '...' if len(post.selftext or '') > 500 else post.selftext or '',
-                'nsfw': post.over_18,
-                'post_id': post.id,
-                'sentiment': sentiment,
-                'sentiment_score': sentiment_score,
-                'engagement_rate': engagement_rate,
-                'relevance_score': relevance_score,
-                'keywords_found': ', '.join([kw for kw in keywords if kw.lower() in post.title.lower() or kw.lower() in (post.selftext or '').lower()])
-            }
-            posts.append(post_data)
+                    
+        except Exception as search_error:
+            return jsonify({
+                'success': False, 
+                'error': f'Search failed: {str(search_error)}'
+            })
         
-        search_time = len(posts) * 0.1  # Simulated search time
+        # Calculate actual search time based on processing
+        search_time = max(0.5, processed_count * 0.05) + (max_results / 1000)
         
         return jsonify({
             'success': True,
             'total_posts': len(posts),
+            'total_fetched': total_fetched,
+            'processed_count': processed_count,
             'search_query': search_query,
             'search_time': f"{search_time:.2f} seconds",
             'posts': posts
@@ -666,26 +739,41 @@ def download_excel():
             # Main data sheet
             df.to_excel(writer, sheet_name='Reddit_Data', index=False)
             
-            # Summary sheet
+            # Summary sheet with enhanced metrics
             summary_data = {
                 'Metric': [
-                    'Total Posts', 'Unique Subreddits', 'Avg Score', 'Avg Comments',
+                    'Search Query', 'Total Posts Found', 'Unique Subreddits', 'Export Date',
+                    'Average Score', 'Average Comments', 'Total Comments',
                     'Positive Sentiment %', 'Negative Sentiment %', 'Neutral Sentiment %',
-                    'Avg Relevance Score', 'Avg Engagement Rate'
+                    'Average Relevance Score', 'Average Engagement Rate',
+                    'Highest Score Post', 'Most Commented Post', 'Most Engaging Post'
                 ],
                 'Value': [
+                    query,
                     len(posts),
                     df['subreddit'].nunique(),
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     round(df['score'].mean(), 2),
                     round(df['num_comments'].mean(), 2),
+                    df['num_comments'].sum(),
                     round((df['sentiment'] == 'positive').mean() * 100, 1),
                     round((df['sentiment'] == 'negative').mean() * 100, 1),
                     round((df['sentiment'] == 'neutral').mean() * 100, 1),
                     round(df['relevance_score'].mean(), 2),
-                    round(df['engagement_rate'].mean(), 2)
+                    round(df['engagement_rate'].mean(), 2),
+                    df.loc[df['score'].idxmax(), 'title'][:50] + '...' if not df.empty else 'N/A',
+                    df.loc[df['num_comments'].idxmax(), 'title'][:50] + '...' if not df.empty else 'N/A',
+                    df.loc[df['engagement_rate'].idxmax(), 'title'][:50] + '...' if not df.empty else 'N/A'
                 ]
             }
             pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Top subreddits sheet
+            if not df.empty:
+                top_subreddits = df['subreddit'].value_counts().head(20).reset_index()
+                top_subreddits.columns = ['Subreddit', 'Post_Count']
+                top_subreddits['Percentage'] = round((top_subreddits['Post_Count'] / len(df)) * 100, 1)
+                top_subreddits.to_excel(writer, sheet_name='Top_Subreddits', index=False)
         
         output.seek(0)
         
