@@ -1,24 +1,9 @@
 {
   "version": 2,
-  "devCommand": "streamlit run streamlit_app.py --server.port 3000",
-  "installCommand": "pip install -r requirements.txt",
-  "buildCommand": "echo 'No build required for Streamlit app'",
-  "outputDirectory": ".",
-  "framework": null,
-  "functions": {
-    "streamlit_app.py": {
-      "runtime": "python3.9",
-      "maxDuration": 300
-    }
-  },
-  "routes": [
+  "builds": [
     {
-      "src": "/healthz",
-      "dest": "/api/health"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/streamlit_app.py"
+      "src": "streamlit_app.py",
+      "use": "@vercel/python"
     }
   ]
 }
