@@ -32,10 +32,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Import and run the enhanced main app
+# Import and run the optimized main app for Vercel
 try:
-    from advanced_interface import main
+    from streamlit_minimal import main
     main()
 except ImportError:
-    # Fallback: run embedded advanced interface
-    exec(open('advanced_interface.py').read())
+    # Fallback: run embedded minimal interface
+    exec(open('streamlit_minimal.py').read())
