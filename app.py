@@ -41,7 +41,7 @@ def get_reddit_instance():
 
 @app.route('/')
 def index():
-    return '''
+    return f'''
     <!DOCTYPE html>
     <html>
     <head>
