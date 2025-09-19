@@ -1,0 +1,15 @@
+output/
+*.md
+*.txt
+!requirements.txt
+test_*
+setup_*
+install.py
+run_scraper.py
+DELIVERY_*
+ENHANCED_*
+QUICK_*
+WEB_*
+HOW_*
+.env.template
+.env.production
