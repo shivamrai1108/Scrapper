@@ -11,15 +11,32 @@ import praw
 from datetime import datetime, timedelta
 import tempfile
 import io
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 app = Flask(__name__)
 
 # Initialize Reddit API
 def get_reddit_instance():
+    # Clean and validate environment variables
+    client_id = os.getenv('REDDIT_CLIENT_ID', '').strip()
+    client_secret = os.getenv('REDDIT_CLIENT_SECRET', '').strip()
+    user_agent = os.getenv('REDDIT_USER_AGENT', 'RedditScraper/1.0').strip()
+    
+    # Ensure user agent is properly formatted
+    if not user_agent or '\n' in user_agent:
+        user_agent = 'RedditScraper/1.0 by user'
+    
+    if not client_id or not client_secret:
+        raise ValueError("Reddit API credentials not found in environment variables")
+    
     return praw.Reddit(
-        client_id=os.getenv('REDDIT_CLIENT_ID'),
-        client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
-        user_agent=os.getenv('REDDIT_USER_AGENT')
+        client_id=client_id,
+        client_secret=client_secret,
+        user_agent=user_agent
     )
 
 @app.route('/')
@@ -162,8 +179,13 @@ def api_search():
         if not keywords:
             return jsonify({'success': False, 'error': 'Keywords are required'})
         
-        # Initialize Reddit
-        reddit = get_reddit_instance()
+        # Initialize Reddit with error handling
+        try:
+            reddit = get_reddit_instance()
+        except ValueError as ve:
+            return jsonify({'success': False, 'error': f'Configuration error: {str(ve)}'})
+        except Exception as re:
+            return jsonify({'success': False, 'error': f'Reddit API error: {str(re)}'})
         
         # Build search query
         search_query = keywords
