@@ -503,6 +503,9 @@ def index():
                 <button class="settings-btn" onclick="openSlackModal()">
                     <span>⚙️</span> Slack Integration
                 </button>
+                <button type="button" style="background: red; color: white; margin-left: 10px; padding: 8px 16px; border: none; border-radius: 4px;" onclick="alert('TEST SUCCESS! JS is working'); console.log('TEST BUTTON CLICKED')">
+                    🔴 TEST CLICK
+                </button>
             </div>
         </div>
         
@@ -600,7 +603,7 @@ def index():
                 <!-- Add New Integration -->
                 <div class="slack-form">
                     <h3 style="margin-bottom: 15px; color: #4a154b;">🔗 Connect New Slack Workspace</h3>
-                    <form id="slackIntegrationForm">
+                    <form id="slackIntegrationForm" onsubmit="handleSlackFormSubmit(event)">
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="integrationName">Integration Name</label>
@@ -709,6 +712,9 @@ def index():
     </div>
     
     <script>
+        console.log('=== JavaScript Loading Started ===');
+        console.log('Document ready state:', document.readyState);
+        
         let searchResults = null;
         let searchQuery = '';
         
@@ -949,18 +955,18 @@ def index():
                             `<br><strong>Keywords:</strong> ${integration.keyword_filters.join(', ')}` : ''}
                     </div>
                     <div class="integration-actions">
-                        <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')"⚙️ Test</button>
-                        <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')"🗑️ Delete</button>
+                        <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')">⚙️ Test</button>
+                        <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')">🗑️ Delete</button>
                     </div>
                 </div>
             `).join('');
         }
         
         // Handle Slack integration form submission
-        document.getElementById('slackIntegrationForm').addEventListener('submit', async function(e) {
+        async function handleSlackFormSubmit(e) {
             e.preventDefault();
             
-            const formData = new FormData(this);
+            const formData = new FormData(e.target);
             const data = {
                 name: formData.get('name'),
                 channel: formData.get('channel'),
@@ -983,7 +989,7 @@ def index():
                 
                 if (result.success) {
                     showAlert('success', result.message);
-                    this.reset();
+                    e.target.reset();
                     loadSlackSettings();
                 } else {
                     showAlert('error', result.error);
@@ -991,7 +997,7 @@ def index():
             } catch (error) {
                 showAlert('error', `Network error: ${error.message}`);
             }
-        });
+        }
         
         async function testIntegration(integrationId) {
             try {
