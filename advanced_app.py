@@ -416,6 +416,82 @@ def index():
         .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .alert.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        
+        /* Modal Styles */
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; 
+                background-color: rgba(0,0,0,0.5); animation: fadeIn 0.3s; }
+        .modal-content { background-color: white; margin: 3% auto; padding: 0; border-radius: 12px; 
+                        width: 90%; max-width: 800px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); animation: slideIn 0.3s; }
+        .modal-header { padding: 20px 30px; border-bottom: 1px solid #eee; display: flex; 
+                       justify-content: space-between; align-items: center; background: #f8f9fa; 
+                       border-radius: 12px 12px 0 0; }
+        .modal-title { font-size: 1.4rem; font-weight: bold; color: #333; }
+        .close-btn { background: none; border: none; font-size: 28px; cursor: pointer; color: #999; width: auto; }
+        .close-btn:hover { color: #333; }
+        .modal-body { padding: 30px; max-height: 500px; overflow-y: auto; }
+        .modal-footer { padding: 20px 30px; border-top: 1px solid #eee; text-align: right; 
+                       background: #f8f9fa; border-radius: 0 0 12px 12px; }
+        
+        /* Slack Integration Styles */
+        .slack-form { margin-bottom: 25px; }
+        .slack-form .form-row { display: flex; gap: 15px; margin-bottom: 15px; }
+        .slack-form .form-group { flex: 1; }
+        .slack-form input, .slack-form select, .slack-form textarea { width: 100%; padding: 10px; 
+                                                                     border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .slack-form label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        
+        .integration-list { margin-top: 20px; }
+        .integration-item { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px; 
+                           border: 1px solid #e9ecef; }
+        .integration-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .integration-name { font-weight: bold; color: #333; }
+        .integration-status { padding: 4px 8px; border-radius: 12px; font-size: 12px; background: #28a745; color: white; }
+        .integration-status.inactive { background: #6c757d; }
+        .integration-details { font-size: 13px; color: #666; margin-bottom: 10px; }
+        .integration-actions { display: flex; gap: 8px; }
+        .btn-sm { padding: 4px 8px; font-size: 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; }
+        .btn-test { background: #17a2b8; color: white; }
+        .btn-test:hover { background: #138496; }
+        .btn-delete { background: #dc3545; color: white; }
+        .btn-delete:hover { background: #c82333; }
+        
+        /* Discover Subreddits Styles */
+        .modal-search { margin-bottom: 25px; padding: 20px; background: #f0f9ff; border-radius: 8px; }
+        .modal-search input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; 
+                             font-size: 16px; margin-bottom: 10px; }
+        .modal-search input:focus { outline: none; border-color: #ff6b35; }
+        .search-btn { background: #ff6b35; color: white; border: none; padding: 10px 20px; border-radius: 6px; 
+                     cursor: pointer; font-size: 14px; font-weight: bold; width: auto; }
+        .search-btn:hover { background: #e55a2e; }
+        
+        .selected-subreddits { margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 8px; }
+        .selected-title { font-weight: bold; margin-bottom: 10px; color: #1565c0; }
+        .selected-item { display: inline-flex; align-items: center; background: white; padding: 6px 12px; 
+                        margin: 4px; border-radius: 20px; border: 1px solid #1565c0; font-size: 13px; }
+        .selected-name { color: #1565c0; font-weight: bold; }
+        .remove-btn { background: #f44336; color: white; border: none; width: 18px; height: 18px; 
+                     border-radius: 50%; margin-left: 8px; cursor: pointer; font-size: 10px; }
+        .remove-btn:hover { background: #d32f2f; }
+        
+        .subreddit-results { background: white; border-radius: 8px; border: 1px solid #ddd; }
+        .subreddit-item { display: flex; align-items: center; justify-content: space-between; 
+                         padding: 12px; border-bottom: 1px solid #eee; }
+        .subreddit-item:last-child { border-bottom: none; }
+        .subreddit-info { flex-grow: 1; }
+        .subreddit-name { font-weight: bold; color: #1a73e8; }
+        .subreddit-stats { color: #666; font-size: 12px; margin-top: 4px; }
+        .subreddit-description { color: #888; font-size: 11px; margin-top: 2px; }
+        .add-btn { background: #28a745; color: white; border: none; padding: 8px 16px; 
+                  border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; width: auto; }
+        .add-btn:hover { background: #218838; }
+        .add-btn:disabled { background: #6c757d; cursor: not-allowed; }
+        
+        .modal-loading { text-align: center; padding: 20px; }
+        .modal-spinner { border: 3px solid #f3f3f3; border-top: 3px solid #ff6b35; border-radius: 50%; 
+                        width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideIn { from { transform: translateY(-50px); } to { transform: translateY(0); } }
     </style>
 </head>
 <body>
@@ -509,6 +585,125 @@ def index():
                     <h3>📋 Data Preview</h3>
                     <div id="dataContent"></div>
                 </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Slack Integration Modal -->
+    <div id="slackModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 class="modal-title">⚙️ Slack Integration Settings</h2>
+                <button class="close-btn" onclick="closeSlackModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Add New Integration -->
+                <div class="slack-form">
+                    <h3 style="margin-bottom: 15px; color: #4a154b;">🔗 Connect New Slack Workspace</h3>
+                    <form id="slackIntegrationForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="integrationName">Integration Name</label>
+                                <input type="text" id="integrationName" name="name" placeholder="My Team Workspace" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="slackChannel">Slack Channel</label>
+                                <input type="text" id="slackChannel" name="channel" placeholder="#reddit-alerts" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="webhookUrl">Slack Webhook URL</label>
+                                <input type="url" id="webhookUrl" name="webhook_url" placeholder="https://hooks.slack.com/services/..." required>
+                                <small style="color: #666; margin-top: 5px; display: block;">Get this from your Slack workspace's "Incoming Webhooks" app</small>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="severityLevel">Notification Level</label>
+                                <select id="severityLevel" name="severity_level">
+                                    <option value="info">All searches (Info)</option>
+                                    <option value="warning">Medium searches (25+ posts)</option>
+                                    <option value="alert">Large searches (100+ posts)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="minPosts">Minimum Posts</label>
+                                <input type="number" id="minPosts" name="min_posts" value="1" min="1">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="keywordFilters">Keyword Filters (optional)</label>
+                                <textarea id="keywordFilters" name="keyword_filters" placeholder="crypto\nNFT\nblockchain" rows="3"></textarea>
+                                <small style="color: #666; margin-top: 5px; display: block;">Only send notifications for searches containing these keywords (one per line)</small>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <button type="submit" class="btn-primary" style="width: auto; background: #4a154b;">🚀 Connect & Test</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Existing Integrations -->
+                <div class="integration-list">
+                    <h3 style="margin-bottom: 15px; color: #333;">📋 Your Slack Integrations</h3>
+                    <div id="integrationsList">
+                        <p style="text-align: center; color: #666; padding: 20px;">Loading integrations...</p>
+                    </div>
+                </div>
+                
+                <!-- Help Section -->
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 25px;">
+                    <h4 style="margin-bottom: 10px; color: #333;">ℹ️ How to Set Up Slack Integration:</h4>
+                    <ol style="margin: 0; padding-left: 20px; color: #666;">
+                        <li>Go to your Slack workspace</li>
+                        <li>Add the "Incoming Webhooks" app</li>
+                        <li>Choose a channel and copy the webhook URL</li>
+                        <li>Paste the URL above and configure your settings</li>
+                        <li>Click "Connect & Test" to verify the integration</li>
+                    </ol>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="loadSlackSettings()" style="background: #28a745; width: auto;">🔄 Refresh</button>
+                <button class="btn-primary" onclick="closeSlackModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Discover Subreddits Modal -->
+    <div id="discoverModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">🔍 Discover Subreddits</h2>
+                <button class="close-btn" onclick="closeDiscoverModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-search">
+                    <h4 style="margin-bottom: 10px; color: #333;">Search for Subreddits</h4>
+                    <input type="text" id="modalSearchInput" placeholder="Search by topic (e.g., 'technology', 'startups', 'marketing')" onkeypress="if(event.key==='Enter') searchSubredditsInModal()">
+                    <button class="search-btn" onclick="searchSubredditsInModal()">🔍 Search</button>
+                </div>
+                
+                <div id="selectedSubreddits" class="selected-subreddits" style="display: none;">
+                    <div class="selected-title">🎯 Selected Subreddits:</div>
+                    <div id="selectedList"></div>
+                </div>
+                
+                <div id="modalLoading" class="modal-loading" style="display: none;">
+                    <div class="modal-spinner"></div>
+                    <p>Searching for subreddits...</p>
+                </div>
+                
+                <div id="modalResults" style="display: none;">
+                    <h4 style="margin-bottom: 15px;">Found Subreddits:</h4>
+                    <div id="modalResultsList" class="subreddit-results"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="applySelectedSubreddits()" style="width: auto;">Apply Selected</button>
+                <button class="btn-primary" onclick="closeDiscoverModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Cancel</button>
             </div>
         </div>
     </div>
@@ -703,14 +898,268 @@ def index():
             setTimeout(() => alert.remove(), 5000);
         }
         
-        // Placeholder functions for buttons (to be implemented)
+        // ============ SLACK INTEGRATION FUNCTIONS ============
+        
         function openSlackModal() {
-            showAlert('info', '🔧 Slack integration coming soon! This will allow you to receive search notifications in your Slack channel.');
+            document.getElementById('slackModal').style.display = 'block';
+            loadSlackSettings();
         }
         
-        function openDiscoverModal() {
-            showAlert('info', '🔧 Discover subreddits feature coming soon! This will help you find relevant communities to search.');
+        function closeSlackModal() {
+            document.getElementById('slackModal').style.display = 'none';
+            document.getElementById('slackIntegrationForm').reset();
         }
+        
+        async function loadSlackSettings() {
+            try {
+                const response = await fetch('/api/slack/settings');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayIntegrations(data.integrations);
+                } else {
+                    showAlert('error', `Failed to load settings: ${data.error}`);
+                }
+            } catch (error) {
+                showAlert('error', `Network error: ${error.message}`);
+            }
+        }
+        
+        function displayIntegrations(integrations) {
+            const container = document.getElementById('integrationsList');
+            
+            if (integrations.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No Slack integrations configured yet.</p>';
+                return;
+            }
+            
+            container.innerHTML = integrations.map(integration => `
+                <div class="integration-item">
+                    <div class="integration-header">
+                        <div class="integration-name">${integration.name}</div>
+                        <div class="integration-status ${integration.active ? '' : 'inactive'}">
+                            ${integration.active ? 'Active' : 'Inactive'}
+                        </div>
+                    </div>
+                    <div class="integration-details">
+                        <strong>Channel:</strong> ${integration.channel} • 
+                        <strong>Level:</strong> ${integration.severity_level} • 
+                        <strong>Min Posts:</strong> ${integration.min_posts}
+                        ${integration.keyword_filters && integration.keyword_filters.length > 0 ? 
+                            `<br><strong>Keywords:</strong> ${integration.keyword_filters.join(', ')}` : ''}
+                    </div>
+                    <div class="integration-actions">
+                        <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')"⚙️ Test</button>
+                        <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')"🗑️ Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Handle Slack integration form submission
+        document.getElementById('slackIntegrationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const data = {
+                name: formData.get('name'),
+                channel: formData.get('channel'),
+                webhook_url: formData.get('webhook_url'),
+                severity_level: formData.get('severity_level'),
+                min_posts: parseInt(formData.get('min_posts')),
+                keyword_filters: formData.get('keyword_filters') ? 
+                    formData.get('keyword_filters').split('\n').map(k => k.trim()).filter(k => k) : [],
+                created_by: 'user'
+            };
+            
+            try {
+                const response = await fetch('/api/slack/integration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('success', result.message);
+                    this.reset();
+                    loadSlackSettings();
+                } else {
+                    showAlert('error', result.error);
+                }
+            } catch (error) {
+                showAlert('error', `Network error: ${error.message}`);
+            }
+        });
+        
+        async function testIntegration(integrationId) {
+            try {
+                const response = await fetch(`/api/slack/test/${integrationId}`, { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('success', `Test successful! 🚀 ${result.message}`);
+                } else {
+                    showAlert('error', `Test failed: ${result.message}`);
+                }
+                
+                setTimeout(() => loadSlackSettings(), 1000);
+            } catch (error) {
+                showAlert('error', `Network error: ${error.message}`);
+            }
+        }
+        
+        async function deleteIntegration(integrationId) {
+            if (!confirm('Are you sure you want to delete this Slack integration?')) return;
+            
+            try {
+                const response = await fetch(`/api/slack/integration/${integrationId}`, { method: 'DELETE' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('success', 'Integration deleted successfully!');
+                    loadSlackSettings();
+                } else {
+                    showAlert('error', result.error);
+                }
+            } catch (error) {
+                showAlert('error', `Network error: ${error.message}`);
+            }
+        }
+        
+        // ============ DISCOVER SUBREDDITS FUNCTIONS ============
+        
+        let selectedSubreddits = new Set();
+        
+        function openDiscoverModal() {
+            document.getElementById('discoverModal').style.display = 'block';
+            document.getElementById('modalSearchInput').focus();
+            loadExistingSubreddits();
+        }
+        
+        function closeDiscoverModal() {
+            document.getElementById('discoverModal').style.display = 'none';
+            document.getElementById('modalResults').style.display = 'none';
+            document.getElementById('modalLoading').style.display = 'none';
+            document.getElementById('modalSearchInput').value = '';
+        }
+        
+        function loadExistingSubreddits() {
+            const currentValue = document.getElementById('subreddit').value.trim();
+            selectedSubreddits.clear();
+            
+            if (currentValue && currentValue.toLowerCase() !== 'all') {
+                const subreddits = currentValue.split(',').map(s => s.trim()).filter(s => s);
+                subreddits.forEach(sub => selectedSubreddits.add(sub));
+            }
+            
+            updateSelectedDisplay();
+        }
+        
+        async function searchSubredditsInModal() {
+            const searchTerm = document.getElementById('modalSearchInput').value.trim();
+            if (!searchTerm) {
+                showAlert('error', 'Please enter a search term to find subreddits.');
+                return;
+            }
+            
+            const loading = document.getElementById('modalLoading');
+            const results = document.getElementById('modalResults');
+            const resultsList = document.getElementById('modalResultsList');
+            
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/discover_subreddits?search=${encodeURIComponent(searchTerm)}`);
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (data.success && data.subreddits.length > 0) {
+                    resultsList.innerHTML = data.subreddits.map(sub => {
+                        const isSelected = selectedSubreddits.has(sub.name);
+                        return `
+                            <div class="subreddit-item">
+                                <div class="subreddit-info">
+                                    <div class="subreddit-name">r/${sub.name}</div>
+                                    <div class="subreddit-stats">${sub.subscribers.toLocaleString()} members</div>
+                                    <div class="subreddit-description">${sub.description || sub.title}</div>
+                                </div>
+                                <button class="add-btn" onclick="toggleSubreddit('${sub.name}')" ${isSelected ? 'disabled' : ''}>
+                                    ${isSelected ? '✓ Added' : '+ Add'}
+                                </button>
+                            </div>
+                        `;
+                    }).join('');
+                    results.style.display = 'block';
+                } else {
+                    resultsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No subreddits found. Try a different search term.</p>';
+                    results.style.display = 'block';
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                showAlert('error', `Search failed: ${error.message}`);
+            }
+        }
+        
+        function toggleSubreddit(subredditName) {
+            if (selectedSubreddits.has(subredditName)) {
+                selectedSubreddits.delete(subredditName);
+            } else {
+                selectedSubreddits.add(subredditName);
+            }
+            updateSelectedDisplay();
+            searchSubredditsInModal(); // Refresh results to update buttons
+        }
+        
+        function removeSelectedSubreddit(subredditName) {
+            selectedSubreddits.delete(subredditName);
+            updateSelectedDisplay();
+        }
+        
+        function updateSelectedDisplay() {
+            const selectedSection = document.getElementById('selectedSubreddits');
+            const selectedList = document.getElementById('selectedList');
+            
+            if (selectedSubreddits.size > 0) {
+                selectedList.innerHTML = Array.from(selectedSubreddits).map(sub => `
+                    <div class="selected-item">
+                        <span class="selected-name">r/${sub}</span>
+                        <button class="remove-btn" onclick="removeSelectedSubreddit('${sub}')" title="Remove">×</button>
+                    </div>
+                `).join('');
+                selectedSection.style.display = 'block';
+            } else {
+                selectedSection.style.display = 'none';
+            }
+        }
+        
+        function applySelectedSubreddits() {
+            const subredditInput = document.getElementById('subreddit');
+            
+            if (selectedSubreddits.size > 0) {
+                subredditInput.value = Array.from(selectedSubreddits).join(',');
+                showAlert('success', `Applied ${selectedSubreddits.size} subreddit(s) to your search!`);
+            } else {
+                subredditInput.value = 'all';
+                showAlert('info', 'No subreddits selected. Set to search all of Reddit.');
+            }
+            
+            closeDiscoverModal();
+        }
+        
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const discoverModal = document.getElementById('discoverModal');
+            const slackModal = document.getElementById('slackModal');
+            if (event.target === discoverModal) {
+                closeDiscoverModal();
+            } else if (event.target === slackModal) {
+                closeSlackModal();
+            }
+        };
     </script>
 </body>
 </html>
