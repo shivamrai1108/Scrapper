@@ -712,8 +712,9 @@ def index():
     </div>
     
     <script>
-        console.log('=== JavaScript Loading Started ===');
+        console.log('=== JavaScript Loading Started - v2.1 ===');
         console.log('Document ready state:', document.readyState);
+        console.log('Deployment time: 2025-09-20 21:13 UTC');
         
         let searchResults = null;
         let searchQuery = '';
