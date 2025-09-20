@@ -945,30 +945,49 @@ def index():
         }
         
         async function loadSlackSettings() {
+            console.log('Loading Slack settings...');
+            
             try {
                 const response = await fetch('/api/slack/settings');
+                console.log('Settings response status:', response.status);
+                
                 const data = await response.json();
+                console.log('Settings data:', data);
                 
                 if (data.success) {
+                    console.log('Found integrations:', data.integrations.length);
                     displayIntegrations(data.integrations);
                 } else {
+                    console.log('Settings API error:', data.error);
                     showAlert('error', `Failed to load settings: ${data.error}`);
                 }
             } catch (error) {
+                console.log('Settings network error:', error);
                 showAlert('error', `Network error: ${error.message}`);
             }
         }
         
         function displayIntegrations(integrations) {
+            console.log('Displaying integrations:', integrations);
             const container = document.getElementById('integrationsList');
             
+            if (!container) {
+                console.error('integrationsList container not found!');
+                return;
+            }
+            
             if (integrations.length === 0) {
+                console.log('No integrations to display');
                 container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No Slack integrations configured yet.</p>';
                 return;
             }
             
-            container.innerHTML = integrations.map(integration => `
-                <div class="integration-item">
+            console.log(`Rendering ${integrations.length} integrations`);
+            
+            const html = integrations.map(integration => {
+                console.log('Rendering integration:', integration.name, integration.id);
+                return `
+                <div class="integration-item" data-integration-id="${integration.id}">
                     <div class="integration-header">
                         <div class="integration-name">${integration.name}</div>
                         <div class="integration-status ${integration.active ? '' : 'inactive'}">
@@ -983,15 +1002,20 @@ def index():
                             `<br><strong>Keywords:</strong> ${integration.keyword_filters.join(', ')}` : ''}
                     </div>
                     <div class="integration-actions">
-                        <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')">⚙️ Test</button>
-                        <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')">🗑️ Delete</button>
+                        <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')" data-integration-id="${integration.id}">⚙️ Test</button>
+                        <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')" data-integration-id="${integration.id}">🗑️ Delete</button>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
+            
+            container.innerHTML = html;
+            console.log('Integration HTML rendered successfully');
         }
         
         // Handle Slack integration form submission
         async function handleSlackFormSubmit(e) {
+            console.log('Form submit triggered');
             e.preventDefault();
             
             const formData = new FormData(e.target);
@@ -1006,6 +1030,8 @@ def index():
                 created_by: 'user'
             };
             
+            console.log('Creating integration with data:', data);
+            
             try {
                 const response = await fetch('/api/slack/integration', {
                     method: 'POST',
@@ -1013,16 +1039,24 @@ def index():
                     body: JSON.stringify(data)
                 });
                 
+                console.log('Create integration response status:', response.status);
                 const result = await response.json();
+                console.log('Create integration result:', result);
                 
                 if (result.success) {
                     showAlert('success', result.message);
+                    console.log('Resetting form and reloading settings...');
                     e.target.reset();
-                    loadSlackSettings();
+                    // Add small delay to ensure backend is updated
+                    setTimeout(() => {
+                        console.log('Calling loadSlackSettings after delay...');
+                        loadSlackSettings();
+                    }, 500);
                 } else {
                     showAlert('error', result.error);
                 }
             } catch (error) {
+                console.log('Form submission error:', error);
                 showAlert('error', `Network error: ${error.message}`);
             }
         }
