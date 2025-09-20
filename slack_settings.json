@@ -1,0 +1,36 @@
+{
+  "integrations": [
+    {
+      "id": "5bcd9090-920c-4ac0-8d10-dc50c8002c94",
+      "name": "Red",
+      "webhook_url": "https://hooks.slack.com/services/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",
+      "channel": "#int-red",
+      "active": true,
+      "created_at": "2025-09-21T03:06:25.977570",
+      "created_by": "user",
+      "severity_level": "warning",
+      "keyword_filters": [],
+      "min_posts": 20,
+      "last_notification": null
+    }
+  ],
+  "audit_log": [
+    {
+      "id": "0cee2846-8fa1-4ef6-b919-3d02d64280a1",
+      "integration_id": "5bcd9090-920c-4ac0-8d10-dc50c8002c94",
+      "timestamp": "2025-09-21T03:06:30.563409",
+      "success": true,
+      "message": "Manual test: Test message sent successfully!",
+      "search_query": "test",
+      "subreddit": "test"
+    },
+    {
+      "id": "b50d718e-b282-4668-a187-5cb57d58d7ac",
+      "integration_id": "5bcd9090-920c-4ac0-8d10-dc50c8002c94",
+      "timestamp": "2025-09-21T03:06:25.977686",
+      "action": "integration_created",
+      "details": "Integration \"Red\" created for channel #int-red",
+      "user": "user"
+    }
+  ]
+}

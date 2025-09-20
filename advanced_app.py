@@ -24,12 +24,21 @@ app = Flask(__name__)
 def get_reddit_instance():
     """Get Reddit API instance"""
     try:
+        client_id = os.getenv('REDDIT_CLIENT_ID', '').strip()
+        client_secret = os.getenv('REDDIT_CLIENT_SECRET', '').strip()
+        user_agent = os.getenv('REDDIT_USER_AGENT', 'RedditScraper/1.0').strip()
+        
+        if not client_id or not client_secret:
+            print("WARNING: Reddit API credentials not found. Using mock data for testing.")
+            return None
+            
         return praw.Reddit(
-            client_id=os.getenv('REDDIT_CLIENT_ID', '').strip(),
-            client_secret=os.getenv('REDDIT_CLIENT_SECRET', '').strip(),
-            user_agent=os.getenv('REDDIT_USER_AGENT', 'RedditScraper/1.0').strip()
+            client_id=client_id,
+            client_secret=client_secret,
+            user_agent=user_agent
         )
     except Exception as e:
+        print(f"Reddit API error: {e}")
         return None
 
 def simple_sentiment(text):
