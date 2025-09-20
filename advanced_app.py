@@ -13,6 +13,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 import tempfile
 import re
+import requests
+import time
+import logging
+from threading import Thread
+from uuid import uuid4
 
 app = Flask(__name__)
 
@@ -69,6 +74,270 @@ def calculate_metrics(post, keywords):
             relevance_score += 5
     
     return min(relevance_score, 100), engagement_rate
+
+# ============ SLACK INTEGRATION SYSTEM ============
+
+def load_slack_settings():
+    """Load Slack integration settings from file"""
+    settings_file = 'slack_settings.json'
+    try:
+        if os.path.exists(settings_file):
+            with open(settings_file, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading Slack settings: {e}")
+    
+    return {
+        'integrations': [],
+        'audit_log': []
+    }
+
+def save_slack_settings(settings):
+    """Save Slack integration settings to file"""
+    settings_file = 'slack_settings.json'
+    try:
+        with open(settings_file, 'w') as f:
+            json.dump(settings, f, indent=2, default=str)
+        return True
+    except Exception as e:
+        print(f"Error saving Slack settings: {e}")
+        return False
+
+def validate_slack_webhook(webhook_url):
+    """Validate if a Slack webhook URL is properly formatted"""
+    if not webhook_url:
+        return False, "Webhook URL is required"
+    
+    if not webhook_url.startswith('https://hooks.slack.com/services/'):
+        return False, "Invalid Slack webhook URL format"
+    
+    return True, "Valid webhook URL"
+
+def test_slack_webhook(webhook_url, channel_name):
+    """Test a Slack webhook by sending a test message"""
+    try:
+        message = {
+            "channel": channel_name,
+            "username": "Reddit Scraper Pro",
+            "icon_emoji": ":mag:",
+            "text": ":wave: Test connection successful!",
+            "attachments": [{
+                "color": "good",
+                "fields": [
+                    {
+                        "title": "Integration Status",
+                        "value": "Your Reddit Scraper Pro is now connected to this Slack channel!",
+                        "short": False
+                    },
+                    {
+                        "title": "Next Steps",
+                        "value": "Run a search to receive notifications about your Reddit analytics.",
+                        "short": False
+                    }
+                ],
+                "footer": "Reddit Scraper Pro",
+                "footer_icon": "https://reddit.com/favicon.ico",
+                "ts": int(time.time())
+            }]
+        }
+        
+        response = requests.post(webhook_url, json=message, timeout=10)
+        if response.status_code == 200:
+            return True, "Test message sent successfully!"
+        else:
+            return False, f"Failed to send test message. Status code: {response.status_code}"
+            
+    except Exception as e:
+        return False, f"Error testing webhook: {str(e)}"
+
+def send_slack_notification(webhook_url, channel, search_data, posts, retry_count=0):
+    """Send a formatted notification to Slack about completed search"""
+    try:
+        # Calculate summary stats
+        total_posts = len(posts)
+        avg_score = sum(p.get('score', 0) for p in posts) / max(total_posts, 1)
+        total_comments = sum(p.get('num_comments', 0) for p in posts)
+        positive_posts = len([p for p in posts if p.get('sentiment') == 'positive'])
+        positive_pct = (positive_posts / total_posts * 100) if total_posts > 0 else 0
+        
+        # Get top 3 posts by engagement
+        top_posts = sorted(posts, key=lambda x: x.get('engagement_rate', 0), reverse=True)[:3]
+        
+        # Create download link (simplified for demo)
+        download_id = str(uuid4())[:8]
+        download_link = f"https://scrapper-eight-alpha.vercel.app/download/{download_id}"
+        
+        # Build Slack message
+        message = {
+            "channel": channel,
+            "username": "Reddit Scraper Pro",
+            "icon_emoji": ":mag:",
+            "text": f":chart_with_upwards_trend: *Reddit Search Complete!*",
+            "attachments": [
+                {
+                    "color": "good" if total_posts > 0 else "warning",
+                    "fields": [
+                        {
+                            "title": "Search Query",
+                            "value": search_data.get('keywords', 'N/A'),
+                            "short": True
+                        },
+                        {
+                            "title": "Subreddit(s)",
+                            "value": search_data.get('subreddit_display', 'all'),
+                            "short": True
+                        },
+                        {
+                            "title": "Posts Found",
+                            "value": f"{total_posts:,}",
+                            "short": True
+                        },
+                        {
+                            "title": "Avg Upvotes",
+                            "value": f"{avg_score:.1f}",
+                            "short": True
+                        },
+                        {
+                            "title": "Total Comments",
+                            "value": f"{total_comments:,}",
+                            "short": True
+                        },
+                        {
+                            "title": "Positive Sentiment",
+                            "value": f"{positive_pct:.1f}%",
+                            "short": True
+                        }
+                    ],
+                    "footer": "Reddit Scraper Pro",
+                    "footer_icon": "https://reddit.com/favicon.ico",
+                    "ts": int(time.time())
+                }
+            ]
+        }
+        
+        # Add top posts preview if available
+        if top_posts:
+            top_posts_text = "\n".join([
+                f"• <{post.get('url', '#')}|{post.get('title', 'Untitled')[:50]}...> ({post.get('score', 0)} upvotes)"
+                for post in top_posts
+            ])
+            
+            message["attachments"].append({
+                "color": "#1a73e8",
+                "title": ":fire: Top Engaging Posts",
+                "text": top_posts_text,
+                "mrkdwn_in": ["text"]
+            })
+        
+        # Add action buttons
+        message["attachments"].append({
+            "color": "#0f9d58",
+            "actions": [
+                {
+                    "type": "button",
+                    "text": ":arrow_down: Download CSV",
+                    "url": download_link,
+                    "style": "primary"
+                },
+                {
+                    "type": "button",
+                    "text": ":mag: View Dashboard",
+                    "url": "https://scrapper-eight-alpha.vercel.app"
+                }
+            ]
+        })
+        
+        response = requests.post(webhook_url, json=message, timeout=15)
+        
+        if response.status_code == 200:
+            return True, "Notification sent successfully"
+        else:
+            if retry_count < 2:  # Retry up to 2 times
+                time.sleep(2 ** retry_count)  # Exponential backoff
+                return send_slack_notification(webhook_url, channel, search_data, posts, retry_count + 1)
+            return False, f"Failed after {retry_count + 1} attempts. Status: {response.status_code}"
+            
+    except Exception as e:
+        if retry_count < 2:
+            time.sleep(2 ** retry_count)
+            return send_slack_notification(webhook_url, channel, search_data, posts, retry_count + 1)
+        return False, f"Error after {retry_count + 1} attempts: {str(e)}"
+
+def should_send_notification(integration, search_data, posts):
+    """Check if notification should be sent based on settings"""
+    # Check if integration is active
+    if not integration.get('active', True):
+        return False
+    
+    # Check keyword filters
+    keyword_filters = integration.get('keyword_filters', [])
+    if keyword_filters:
+        search_keywords = search_data.get('keywords', '').lower().split('\n')
+        if not any(kf.lower() in keyword for keyword in search_keywords for kf in keyword_filters):
+            return False
+    
+    # Check minimum post count
+    min_posts = integration.get('min_posts', 0)
+    if len(posts) < min_posts:
+        return False
+    
+    # Check severity level
+    severity = integration.get('severity_level', 'info')
+    post_count = len(posts)
+    
+    if severity == 'alert' and post_count < 100:
+        return False
+    elif severity == 'warning' and post_count < 25:
+        return False
+    # 'info' level sends all notifications
+    
+    return True
+
+def log_notification_attempt(integration_id, success, message, search_data):
+    """Log notification attempt for audit purposes"""
+    settings = load_slack_settings()
+    log_entry = {
+        'id': str(uuid4()),
+        'integration_id': integration_id,
+        'timestamp': datetime.now().isoformat(),
+        'success': success,
+        'message': message,
+        'search_query': search_data.get('keywords', 'N/A'),
+        'subreddit': search_data.get('subreddit_display', 'N/A')
+    }
+    
+    settings['audit_log'].insert(0, log_entry)
+    # Keep only last 100 log entries
+    settings['audit_log'] = settings['audit_log'][:100]
+    save_slack_settings(settings)
+
+def process_slack_notifications(search_data, posts):
+    """Process all Slack integrations for a completed search"""
+    def send_notifications():
+        settings = load_slack_settings()
+        integrations = settings.get('integrations', [])
+        
+        for integration in integrations:
+            try:
+                if should_send_notification(integration, search_data, posts):
+                    success, message = send_slack_notification(
+                        integration['webhook_url'],
+                        integration['channel'],
+                        search_data,
+                        posts
+                    )
+                    log_notification_attempt(integration['id'], success, message, search_data)
+                    
+            except Exception as e:
+                log_notification_attempt(
+                    integration.get('id', 'unknown'),
+                    False,
+                    f"Exception: {str(e)}",
+                    search_data
+                )
+    
+    # Send notifications in background thread
+    Thread(target=send_notifications, daemon=True).start()
 
 @app.route('/')
 def index():
@@ -253,11 +522,70 @@ def index():
             
             @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
             @keyframes slideIn { from { transform: translateY(-50px); } to { transform: translateY(0); } }
+            
+            /* Slack Integration Styles */
+            .settings-btn {
+                position: absolute; top: 20px; right: 20px;
+                background: #4a154b; color: white; border: none;
+                padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                font-size: 14px; font-weight: bold; text-decoration: none;
+                display: inline-flex; align-items: center; gap: 8px;
+            }
+            .settings-btn:hover { background: #611f69; }
+            
+            .slack-form { margin-bottom: 25px; }
+            .slack-form .form-row { display: flex; gap: 15px; margin-bottom: 15px; }
+            .slack-form .form-group { flex: 1; }
+            .slack-form input, .slack-form select, .slack-form textarea {
+                width: 100%; padding: 10px; border: 1px solid #ddd;
+                border-radius: 4px; font-size: 14px;
+            }
+            .slack-form label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+            
+            .integration-list { margin-top: 20px; }
+            .integration-item {
+                background: #f8f9fa; padding: 15px; border-radius: 8px;
+                margin-bottom: 10px; border: 1px solid #e9ecef;
+            }
+            .integration-header {
+                display: flex; justify-content: space-between; align-items: center;
+                margin-bottom: 10px;
+            }
+            .integration-name { font-weight: bold; color: #333; }
+            .integration-status {
+                padding: 4px 8px; border-radius: 12px; font-size: 12px;
+                background: #28a745; color: white;
+            }
+            .integration-status.inactive { background: #6c757d; }
+            .integration-details { font-size: 13px; color: #666; margin-bottom: 10px; }
+            .integration-actions { display: flex; gap: 8px; }
+            .btn-sm {
+                padding: 4px 8px; font-size: 12px; border-radius: 4px;
+                border: none; cursor: pointer; font-weight: bold;
+            }
+            .btn-test { background: #17a2b8; color: white; }
+            .btn-test:hover { background: #138496; }
+            .btn-delete { background: #dc3545; color: white; }
+            .btn-delete:hover { background: #c82333; }
+            
+            .audit-log { margin-top: 25px; }
+            .log-entry {
+                padding: 10px; border-bottom: 1px solid #eee;
+                display: flex; justify-content: space-between; align-items: center;
+            }
+            .log-entry:last-child { border-bottom: none; }
+            .log-message { flex-grow: 1; }
+            .log-timestamp { font-size: 12px; color: #666; }
+            .log-success { color: #28a745; }
+            .log-error { color: #dc3545; }
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="header">
+            <div class="header" style="position: relative;">
+                <button class="settings-btn" onclick="openSlackModal()">
+                    <span>⚙️</span> Slack Integration
+                </button>
                 <h1>🔍 Reddit Scraper Pro</h1>
                 <p>Advanced Reddit data mining with sentiment analysis, engagement metrics, and Excel export</p>
             </div>
@@ -432,6 +760,100 @@ Salesforce" required></textarea>
                 <div class="modal-footer">
                     <button class="btn-primary" onclick="applySelectedSubreddits()" style="width: auto;">Apply Selected</button>
                     <button class="btn-primary" onclick="closeDiscoverModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slack Integration Modal -->
+        <div id="slackModal" class="modal">
+            <div class="modal-content" style="max-width: 900px;">
+                <div class="modal-header">
+                    <h2 class="modal-title">⚙️ Slack Integration Settings</h2>
+                    <button class="close-btn" onclick="closeSlackModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <!-- Add New Integration -->
+                    <div class="slack-form">
+                        <h3 style="margin-bottom: 15px; color: #4a154b;">🔗 Connect New Slack Workspace</h3>
+                        <form id="slackIntegrationForm">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="integrationName">Integration Name</label>
+                                    <input type="text" id="integrationName" name="name" placeholder="My Team Workspace" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="slackChannel">Slack Channel</label>
+                                    <input type="text" id="slackChannel" name="channel" placeholder="#reddit-alerts" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="webhookUrl">Slack Webhook URL</label>
+                                    <input type="url" id="webhookUrl" name="webhook_url" placeholder="https://hooks.slack.com/services/..." required>
+                                    <small style="color: #666; margin-top: 5px; display: block;">Get this from your Slack workspace's "Incoming Webhooks" app</small>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="severityLevel">Notification Level</label>
+                                    <select id="severityLevel" name="severity_level">
+                                        <option value="info">All searches (Info)</option>
+                                        <option value="warning">Medium searches (25+ posts)</option>
+                                        <option value="alert">Large searches (100+ posts)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="minPosts">Minimum Posts</label>
+                                    <input type="number" id="minPosts" name="min_posts" value="1" min="1">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="keywordFilters">Keyword Filters (optional)</label>
+                                    <textarea id="keywordFilters" name="keyword_filters" placeholder="crypto\nNFT\nblockchain" rows="3"></textarea>
+                                    <small style="color: #666; margin-top: 5px; display: block;">Only send notifications for searches containing these keywords (one per line)</small>
+                                </div>
+                            </div>
+                            <div style="text-align: right;">
+                                <button type="submit" class="btn-primary" style="width: auto; background: #4a154b;">🚀 Connect & Test</button>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Existing Integrations -->
+                    <div class="integration-list">
+                        <h3 style="margin-bottom: 15px; color: #333;">📋 Your Slack Integrations</h3>
+                        <div id="integrationsList">
+                            <p style="text-align: center; color: #666; padding: 20px;">Loading integrations...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Audit Log -->
+                    <div class="audit-log">
+                        <h3 style="margin-bottom: 15px; color: #333;">📊 Recent Activity</h3>
+                        <div id="auditLogList" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px;">
+                            <p style="text-align: center; color: #666; padding: 20px;">Loading audit log...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Help Section -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 25px;">
+                        <h4 style="margin-bottom: 10px; color: #333;">ℹ️ How to Set Up Slack Integration:</h4>
+                        <ol style="margin: 0; padding-left: 20px; color: #666;">
+                            <li>Go to your Slack workspace</li>
+                            <li>Add the "Incoming Webhooks" app</li>
+                            <li>Choose a channel and copy the webhook URL</li>
+                            <li>Paste the URL above and configure your settings</li>
+                            <li>Click "Connect & Test" to verify the integration</li>
+                        </ol>
+                        <p style="margin-top: 10px; margin-bottom: 0; color: #666; font-size: 13px;">
+                            <strong>Privacy:</strong> Webhook URLs are stored securely and only used to send notifications to your Slack channel.
+                        </p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" onclick="loadSlackSettings()" style="background: #28a745; width: auto;">🔄 Refresh</button>
+                    <button class="btn-primary" onclick="closeSlackModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Close</button>
                 </div>
             </div>
         </div>
@@ -867,9 +1289,180 @@ Salesforce" required></textarea>
             
             // Close modal when clicking outside
             window.onclick = function(event) {
-                const modal = document.getElementById('discoverModal');
-                if (event.target === modal) {
+                const discoverModal = document.getElementById('discoverModal');
+                const slackModal = document.getElementById('slackModal');
+                if (event.target === discoverModal) {
                     closeDiscoverModal();
+                } else if (event.target === slackModal) {
+                    closeSlackModal();
+                }
+            }
+            
+            // ============ SLACK INTEGRATION FUNCTIONS ============
+            
+            function openSlackModal() {
+                document.getElementById('slackModal').style.display = 'block';
+                loadSlackSettings();
+            }
+            
+            function closeSlackModal() {
+                document.getElementById('slackModal').style.display = 'none';
+                document.getElementById('slackIntegrationForm').reset();
+            }
+            
+            async function loadSlackSettings() {
+                try {
+                    const response = await fetch('/api/slack/settings');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        displayIntegrations(data.integrations);
+                        displayAuditLog(data.audit_log);
+                    } else {
+                        showAlert('error', `Failed to load settings: ${data.error}`);
+                    }
+                } catch (error) {
+                    showAlert('error', `Network error: ${error.message}`);
+                }
+            }
+            
+            function displayIntegrations(integrations) {
+                const container = document.getElementById('integrationsList');
+                
+                if (integrations.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No Slack integrations configured yet.</p>';
+                    return;
+                }
+                
+                container.innerHTML = integrations.map(integration => `
+                    <div class="integration-item">
+                        <div class="integration-header">
+                            <div class="integration-name">${integration.name}</div>
+                            <div class="integration-status ${integration.active ? '' : 'inactive'}">
+                                ${integration.active ? 'Active' : 'Inactive'}
+                            </div>
+                        </div>
+                        <div class="integration-details">
+                            <strong>Channel:</strong> ${integration.channel} • 
+                            <strong>Level:</strong> ${integration.severity_level} • 
+                            <strong>Min Posts:</strong> ${integration.min_posts}
+                            ${integration.keyword_filters && integration.keyword_filters.length > 0 ? 
+                                `<br><strong>Keywords:</strong> ${integration.keyword_filters.join(', ')}` : ''}
+                        </div>
+                        <div class="integration-actions">
+                            <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')">⚙️ Test</button>
+                            <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')">🗑️ Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            function displayAuditLog(auditLog) {
+                const container = document.getElementById('auditLogList');
+                
+                if (auditLog.length === 0) {
+                    container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No recent activity.</p>';
+                    return;
+                }
+                
+                container.innerHTML = auditLog.map(entry => {
+                    const date = new Date(entry.timestamp).toLocaleString();
+                    const statusClass = entry.success ? 'log-success' : 'log-error';
+                    const icon = entry.success ? '✅' : '❌';
+                    
+                    return `
+                        <div class="log-entry">
+                            <div class="log-message ${statusClass}">
+                                ${icon} ${entry.message}
+                                ${entry.search_query && entry.search_query !== 'test' ? 
+                                    `<br><small>Search: "${entry.search_query}" in ${entry.subreddit}</small>` : ''}
+                            </div>
+                            <div class="log-timestamp">${date}</div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            // Handle Slack integration form submission
+            document.getElementById('slackIntegrationForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(this);
+                const data = {
+                    name: formData.get('name'),
+                    channel: formData.get('channel'),
+                    webhook_url: formData.get('webhook_url'),
+                    severity_level: formData.get('severity_level'),
+                    min_posts: parseInt(formData.get('min_posts')),
+                    keyword_filters: formData.get('keyword_filters') ? 
+                        formData.get('keyword_filters').split('\n').map(k => k.trim()).filter(k => k) : [],
+                    created_by: 'user'
+                };
+                
+                try {
+                    const response = await fetch('/api/slack/integration', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showAlert('success', result.message);
+                        this.reset();
+                        loadSlackSettings(); // Refresh the list
+                    } else {
+                        showAlert('error', result.error);
+                    }
+                } catch (error) {
+                    showAlert('error', `Network error: ${error.message}`);
+                }
+            });
+            
+            async function testIntegration(integrationId) {
+                try {
+                    const response = await fetch(`/api/slack/test/${integrationId}`, {
+                        method: 'POST'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showAlert('success', `Test successful! 🚀 ${result.message}`);
+                    } else {
+                        showAlert('error', `Test failed: ${result.message}`);
+                    }
+                    
+                    // Refresh audit log to show test result
+                    setTimeout(() => loadSlackSettings(), 1000);
+                } catch (error) {
+                    showAlert('error', `Network error: ${error.message}`);
+                }
+            }
+            
+            async function deleteIntegration(integrationId) {
+                if (!confirm('Are you sure you want to delete this Slack integration?')) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/api/slack/integration/${integrationId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showAlert('success', 'Integration deleted successfully!');
+                        loadSlackSettings(); // Refresh the list
+                    } else {
+                        showAlert('error', result.error);
+                    }
+                } catch (error) {
+                    showAlert('error', `Network error: ${error.message}`);
                 }
             }
         </script>
@@ -1096,6 +1689,14 @@ def api_advanced_search():
         # Calculate actual search time based on processing
         search_time = max(0.5, processed_count * 0.05) + (max_results / 1000)
         
+        # Process Slack notifications in background
+        search_data = {
+            'keywords': search_query,
+            'subreddit_display': subreddit_display,
+            'total_posts': len(posts)
+        }
+        process_slack_notifications(search_data, posts)
+        
         return jsonify({
             'success': True,
             'total_posts': len(posts),
@@ -1179,6 +1780,233 @@ def download_excel():
         
     except Exception as e:
         return jsonify({'error': str(e)})
+
+# ============ SLACK INTEGRATION API ENDPOINTS ============
+
+@app.route('/api/slack/settings', methods=['GET'])
+def get_slack_settings():
+    """Get all Slack integration settings"""
+    try:
+        settings = load_slack_settings()
+        # Remove sensitive webhook URLs for security
+        safe_integrations = []
+        for integration in settings.get('integrations', []):
+            safe_integration = integration.copy()
+            if 'webhook_url' in safe_integration:
+                safe_integration['webhook_url'] = '***HIDDEN***'
+            safe_integrations.append(safe_integration)
+        
+        return jsonify({
+            'success': True,
+            'integrations': safe_integrations,
+            'audit_log': settings.get('audit_log', [])[:20]  # Last 20 entries
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/slack/integration', methods=['POST'])
+def create_slack_integration():
+    """Create a new Slack integration"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        webhook_url = data.get('webhook_url', '').strip()
+        channel = data.get('channel', '').strip()
+        name = data.get('name', '').strip()
+        
+        if not webhook_url or not channel or not name:
+            return jsonify({
+                'success': False, 
+                'error': 'Webhook URL, channel, and name are required'
+            })
+        
+        # Validate webhook URL format
+        is_valid, message = validate_slack_webhook(webhook_url)
+        if not is_valid:
+            return jsonify({'success': False, 'error': message})
+        
+        # Test the webhook
+        test_success, test_message = test_slack_webhook(webhook_url, channel)
+        if not test_success:
+            return jsonify({
+                'success': False, 
+                'error': f'Webhook test failed: {test_message}'
+            })
+        
+        # Create new integration
+        integration = {
+            'id': str(uuid4()),
+            'name': name,
+            'webhook_url': webhook_url,
+            'channel': channel,
+            'active': True,
+            'created_at': datetime.now().isoformat(),
+            'created_by': data.get('created_by', 'anonymous'),
+            'severity_level': data.get('severity_level', 'info'),
+            'keyword_filters': data.get('keyword_filters', []),
+            'min_posts': data.get('min_posts', 0),
+            'last_notification': None
+        }
+        
+        # Save to settings
+        settings = load_slack_settings()
+        settings['integrations'].append(integration)
+        
+        # Add audit log entry
+        audit_entry = {
+            'id': str(uuid4()),
+            'integration_id': integration['id'],
+            'timestamp': datetime.now().isoformat(),
+            'action': 'integration_created',
+            'details': f'Integration "{name}" created for channel {channel}',
+            'user': data.get('created_by', 'anonymous')
+        }
+        settings['audit_log'].insert(0, audit_entry)
+        
+        save_slack_settings(settings)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Integration created successfully and test message sent!',
+            'integration_id': integration['id']
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/slack/integration/<integration_id>', methods=['PUT'])
+def update_slack_integration(integration_id):
+    """Update an existing Slack integration"""
+    try:
+        data = request.get_json()
+        settings = load_slack_settings()
+        
+        # Find integration
+        integration = None
+        for i, integ in enumerate(settings['integrations']):
+            if integ['id'] == integration_id:
+                integration = settings['integrations'][i]
+                break
+        
+        if not integration:
+            return jsonify({'success': False, 'error': 'Integration not found'})
+        
+        # Update fields
+        if 'name' in data:
+            integration['name'] = data['name'].strip()
+        if 'channel' in data:
+            integration['channel'] = data['channel'].strip()
+        if 'active' in data:
+            integration['active'] = bool(data['active'])
+        if 'severity_level' in data:
+            integration['severity_level'] = data['severity_level']
+        if 'keyword_filters' in data:
+            integration['keyword_filters'] = data['keyword_filters']
+        if 'min_posts' in data:
+            integration['min_posts'] = int(data['min_posts'])
+        
+        integration['updated_at'] = datetime.now().isoformat()
+        
+        # Add audit log entry
+        audit_entry = {
+            'id': str(uuid4()),
+            'integration_id': integration_id,
+            'timestamp': datetime.now().isoformat(),
+            'action': 'integration_updated',
+            'details': f'Integration "{integration["name"]}" updated',
+            'user': data.get('updated_by', 'anonymous')
+        }
+        settings['audit_log'].insert(0, audit_entry)
+        
+        save_slack_settings(settings)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Integration updated successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/slack/integration/<integration_id>', methods=['DELETE'])
+def delete_slack_integration(integration_id):
+    """Delete a Slack integration"""
+    try:
+        settings = load_slack_settings()
+        
+        # Find and remove integration
+        integration_name = None
+        settings['integrations'] = [
+            integ for integ in settings['integrations'] 
+            if integ['id'] != integration_id
+        ]
+        
+        # Add audit log entry
+        audit_entry = {
+            'id': str(uuid4()),
+            'integration_id': integration_id,
+            'timestamp': datetime.now().isoformat(),
+            'action': 'integration_deleted',
+            'details': f'Integration deleted',
+            'user': 'system'
+        }
+        settings['audit_log'].insert(0, audit_entry)
+        
+        save_slack_settings(settings)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Integration deleted successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/slack/test/<integration_id>', methods=['POST'])
+def test_slack_integration(integration_id):
+    """Test a specific Slack integration"""
+    try:
+        settings = load_slack_settings()
+        
+        # Find integration
+        integration = None
+        for integ in settings['integrations']:
+            if integ['id'] == integration_id:
+                integration = integ
+                break
+        
+        if not integration:
+            return jsonify({'success': False, 'error': 'Integration not found'})
+        
+        # Test webhook
+        success, message = test_slack_webhook(
+            integration['webhook_url'], 
+            integration['channel']
+        )
+        
+        # Log test attempt
+        log_entry = {
+            'id': str(uuid4()),
+            'integration_id': integration_id,
+            'timestamp': datetime.now().isoformat(),
+            'success': success,
+            'message': f'Manual test: {message}',
+            'search_query': 'test',
+            'subreddit': 'test'
+        }
+        
+        settings['audit_log'].insert(0, log_entry)
+        settings['audit_log'] = settings['audit_log'][:100]
+        save_slack_settings(settings)
+        
+        return jsonify({
+            'success': success,
+            'message': message
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/health')
 def health():

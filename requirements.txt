@@ -4,3 +4,5 @@ pandas
 openpyxl
 requests
 python-dotenv
+slack-sdk
+jsonschema
