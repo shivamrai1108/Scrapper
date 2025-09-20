@@ -975,7 +975,7 @@ def index():
                 severity_level: formData.get('severity_level'),
                 min_posts: parseInt(formData.get('min_posts')),
                 keyword_filters: formData.get('keyword_filters') ? 
-                    formData.get('keyword_filters').split('\n').map(k => k.trim()).filter(k => k) : [],
+                    formData.get('keyword_filters').split('\\n').map(k => k.trim()).filter(k => k) : [],
                 created_by: 'user'
             };
             
