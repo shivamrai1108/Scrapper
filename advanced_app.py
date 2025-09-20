@@ -957,10 +957,21 @@ Salesforce" required></textarea>
                 displayEngagement(data.posts);
                 displayData(data.posts);
                 
-                // Show download section
+                // Show download section and attach event listener
                 const downloadSection = document.getElementById('downloadSection');
                 if (downloadSection) {
                     downloadSection.style.display = 'block';
+                    
+                    // Add download button event listener
+                    const downloadBtn = document.getElementById('downloadBtn');
+                    if (downloadBtn) {
+                        // Remove any existing listeners first
+                        downloadBtn.onclick = function() {
+                            if (searchResults) {
+                                downloadExcel(searchResults, searchQuery);
+                            }
+                        };
+                    }
                 }
                 const subredditText = data.subreddit_searched ? ` in ${data.subreddit_searched}` : '';
                 showAlert('success', `🎉 Found ${data.total_posts} posts${subredditText}! Analysis complete. Click download to get Excel file.`);
@@ -1131,12 +1142,7 @@ Salesforce" required></textarea>
                 `;
             }
             
-            // Download functionality
-            document.getElementById('downloadBtn').addEventListener('click', function() {
-                if (searchResults) {
-                    downloadExcel(searchResults, searchQuery);
-                }
-            });
+            // Download functionality will be attached when results are shown
             
             function downloadExcel(posts, query) {
                 const form = document.createElement('form');
