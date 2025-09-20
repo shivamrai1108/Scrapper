@@ -150,6 +150,109 @@ def index():
             .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
             .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
             .alert.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+            
+            /* Discover Subreddits Modal */
+            .discover-btn { 
+                background: #ff6b35; color: white; border: none; cursor: pointer;
+                font-size: 14px; padding: 8px 16px; border-radius: 4px; margin-top: 8px;
+                font-weight: bold; transition: background 0.3s; width: auto;
+            }
+            .discover-btn:hover { background: #e55a2e; }
+            
+            .modal {
+                display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+                width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
+                animation: fadeIn 0.3s;
+            }
+            .modal-content {
+                background-color: white; margin: 3% auto; padding: 0;
+                border-radius: 12px; width: 90%; max-width: 800px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                animation: slideIn 0.3s;
+            }
+            .modal-header {
+                padding: 20px 30px; border-bottom: 1px solid #eee;
+                display: flex; justify-content: space-between; align-items: center;
+                background: #f8f9fa; border-radius: 12px 12px 0 0;
+            }
+            .modal-title { font-size: 1.4rem; font-weight: bold; color: #333; }
+            .close-btn {
+                background: none; border: none; font-size: 28px;
+                cursor: pointer; color: #999; width: auto;
+            }
+            .close-btn:hover { color: #333; }
+            .modal-body { padding: 30px; max-height: 500px; overflow-y: auto; }
+            .modal-footer {
+                padding: 20px 30px; border-top: 1px solid #eee;
+                text-align: right; background: #f8f9fa;
+                border-radius: 0 0 12px 12px;
+            }
+            
+            .modal-search {
+                margin-bottom: 25px; padding: 20px;
+                background: #f0f9ff; border-radius: 8px;
+            }
+            .modal-search input {
+                width: 100%; padding: 12px; border: 2px solid #ddd;
+                border-radius: 6px; font-size: 16px; margin-bottom: 10px;
+            }
+            .modal-search input:focus { outline: none; border-color: #ff6b35; }
+            .search-btn {
+                background: #ff6b35; color: white; border: none;
+                padding: 10px 20px; border-radius: 6px; cursor: pointer;
+                font-weight: bold; width: auto;
+            }
+            .search-btn:hover { background: #e55a2e; }
+            
+            .selected-subreddits {
+                margin-bottom: 20px; padding: 15px;
+                background: #e3f2fd; border-radius: 8px;
+            }
+            .selected-title { font-weight: bold; margin-bottom: 10px; color: #1565c0; }
+            .selected-item {
+                display: inline-flex; align-items: center; background: white;
+                padding: 6px 12px; margin: 4px; border-radius: 20px;
+                border: 1px solid #1565c0; font-size: 13px;
+            }
+            .selected-name { color: #1565c0; font-weight: bold; }
+            .remove-btn {
+                background: #f44336; color: white; border: none;
+                width: 18px; height: 18px; border-radius: 50%;
+                margin-left: 8px; cursor: pointer; font-size: 10px;
+            }
+            .remove-btn:hover { background: #d32f2f; }
+            
+            .subreddit-results {
+                background: white; border-radius: 8px; border: 1px solid #ddd;
+            }
+            .subreddit-item {
+                display: flex; align-items: center; justify-content: space-between;
+                padding: 12px; border-bottom: 1px solid #eee;
+            }
+            .subreddit-item:last-child { border-bottom: none; }
+            .subreddit-info { flex-grow: 1; }
+            .subreddit-name { font-weight: bold; color: #1a73e8; }
+            .subreddit-stats { color: #666; font-size: 12px; margin-top: 4px; }
+            .subreddit-description { color: #888; font-size: 11px; margin-top: 2px; }
+            .add-btn {
+                background: #28a745; color: white; border: none;
+                padding: 8px 16px; border-radius: 6px; cursor: pointer;
+                font-size: 12px; font-weight: bold; width: auto;
+            }
+            .add-btn:hover { background: #218838; }
+            .add-btn:disabled { background: #6c757d; cursor: not-allowed; }
+            
+            .modal-loading {
+                text-align: center; padding: 20px;
+            }
+            .modal-spinner {
+                border: 3px solid #f3f3f3; border-top: 3px solid #ff6b35;
+                border-radius: 50%; width: 30px; height: 30px;
+                animation: spin 1s linear infinite; margin: 0 auto 15px;
+            }
+            
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideIn { from { transform: translateY(-50px); } to { transform: translateY(0); } }
         </style>
     </head>
     <body>
@@ -173,6 +276,7 @@ Salesforce" required></textarea>
                             <label for="subreddit">Subreddit</label>
                             <input type="text" id="subreddit" name="subreddit" value="all" placeholder="all, saas, startups, entrepreneur">
                             <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Enter 'all' for all Reddit or specific subreddit name (e.g., 'saas', 'startups')</small>
+                            <button type="button" class="discover-btn" onclick="openDiscoverModal()">🔍 Discover Subreddits</button>
                         </div>
                     </div>
                     
@@ -291,6 +395,42 @@ Salesforce" required></textarea>
                         <h3>📋 Data Preview</h3>
                         <div id="dataContent"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Discover Subreddits Modal -->
+        <div id="discoverModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">🔍 Discover Subreddits</h2>
+                    <button class="close-btn" onclick="closeDiscoverModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-search">
+                        <h4 style="margin-bottom: 10px; color: #333;">Search for Subreddits</h4>
+                        <input type="text" id="modalSearchInput" placeholder="Search by topic (e.g., 'technology', 'startups', 'marketing')" onkeypress="if(event.key==='Enter') searchSubredditsInModal()">
+                        <button class="search-btn" onclick="searchSubredditsInModal()">🔍 Search</button>
+                    </div>
+                    
+                    <div id="selectedSubreddits" class="selected-subreddits" style="display: none;">
+                        <div class="selected-title">🎯 Selected Subreddits:</div>
+                        <div id="selectedList"></div>
+                    </div>
+                    
+                    <div id="modalLoading" class="modal-loading" style="display: none;">
+                        <div class="modal-spinner"></div>
+                        <p>Searching for subreddits...</p>
+                    </div>
+                    
+                    <div id="modalResults" style="display: none;">
+                        <h4 style="margin-bottom: 15px;">Found Subreddits:</h4>
+                        <div id="modalResultsList" class="subreddit-results"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-primary" onclick="applySelectedSubreddits()" style="width: auto;">Apply Selected</button>
+                    <button class="btn-primary" onclick="closeDiscoverModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -594,10 +734,204 @@ Salesforce" required></textarea>
                 
                 setTimeout(() => alert.remove(), 5000);
             }
+            
+            // Discover Subreddits Modal Functions
+            let selectedSubreddits = new Set();
+            
+            function openDiscoverModal() {
+                document.getElementById('discoverModal').style.display = 'block';
+                document.getElementById('modalSearchInput').focus();
+                loadExistingSubreddits();
+            }
+            
+            function closeDiscoverModal() {
+                document.getElementById('discoverModal').style.display = 'none';
+                document.getElementById('modalResults').style.display = 'none';
+                document.getElementById('modalLoading').style.display = 'none';
+                document.getElementById('modalSearchInput').value = '';
+            }
+            
+            function loadExistingSubreddits() {
+                const currentValue = document.getElementById('subreddit').value.trim();
+                selectedSubreddits.clear();
+                
+                if (currentValue && currentValue.toLowerCase() !== 'all') {
+                    const subreddits = currentValue.split(',').map(s => s.trim()).filter(s => s);
+                    subreddits.forEach(sub => selectedSubreddits.add(sub));
+                }
+                
+                updateSelectedDisplay();
+            }
+            
+            async function searchSubredditsInModal() {
+                const searchTerm = document.getElementById('modalSearchInput').value.trim();
+                if (!searchTerm) {
+                    showAlert('error', 'Please enter a search term to find subreddits.');
+                    return;
+                }
+                
+                const loading = document.getElementById('modalLoading');
+                const results = document.getElementById('modalResults');
+                const resultsList = document.getElementById('modalResultsList');
+                
+                loading.style.display = 'block';
+                results.style.display = 'none';
+                
+                try {
+                    const response = await fetch(`/api/discover_subreddits?search=${encodeURIComponent(searchTerm)}`);
+                    const data = await response.json();
+                    
+                    loading.style.display = 'none';
+                    
+                    if (data.success && data.subreddits.length > 0) {
+                        resultsList.innerHTML = data.subreddits.map(sub => {
+                            const isSelected = selectedSubreddits.has(sub.name);
+                            return `
+                                <div class="subreddit-item">
+                                    <div class="subreddit-info">
+                                        <div class="subreddit-name">r/${sub.name}</div>
+                                        <div class="subreddit-stats">${sub.subscribers.toLocaleString()} members</div>
+                                        <div class="subreddit-description">${sub.description || sub.title}</div>
+                                    </div>
+                                    <button class="add-btn" 
+                                            onclick="toggleSubreddit('${sub.name}')" 
+                                            ${isSelected ? 'disabled' : ''}>
+                                        ${isSelected ? '✓ Added' : '+ Add'}
+                                    </button>
+                                </div>
+                            `;
+                        }).join('');
+                        results.style.display = 'block';
+                    } else {
+                        resultsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No subreddits found. Try a different search term.</p>';
+                        results.style.display = 'block';
+                    }
+                } catch (error) {
+                    loading.style.display = 'none';
+                    showAlert('error', `Search failed: ${error.message}`);
+                }
+            }
+            
+            function toggleSubreddit(subredditName) {
+                if (selectedSubreddits.has(subredditName)) {
+                    selectedSubreddits.delete(subredditName);
+                } else {
+                    selectedSubreddits.add(subredditName);
+                }
+                
+                updateSelectedDisplay();
+                searchSubredditsInModal(); // Refresh results to update buttons
+            }
+            
+            function removeSelectedSubreddit(subredditName) {
+                selectedSubreddits.delete(subredditName);
+                updateSelectedDisplay();
+                // Update results if visible
+                const searchTerm = document.getElementById('modalSearchInput').value.trim();
+                if (searchTerm && document.getElementById('modalResults').style.display === 'block') {
+                    searchSubredditsInModal();
+                }
+            }
+            
+            function updateSelectedDisplay() {
+                const selectedSection = document.getElementById('selectedSubreddits');
+                const selectedList = document.getElementById('selectedList');
+                
+                if (selectedSubreddits.size > 0) {
+                    selectedList.innerHTML = Array.from(selectedSubreddits).map(sub => `
+                        <div class="selected-item">
+                            <span class="selected-name">r/${sub}</span>
+                            <button class="remove-btn" onclick="removeSelectedSubreddit('${sub}')" title="Remove">×</button>
+                        </div>
+                    `).join('');
+                    selectedSection.style.display = 'block';
+                } else {
+                    selectedSection.style.display = 'none';
+                }
+            }
+            
+            function applySelectedSubreddits() {
+                const subredditInput = document.getElementById('subreddit');
+                
+                if (selectedSubreddits.size > 0) {
+                    subredditInput.value = Array.from(selectedSubreddits).join(',');
+                    showAlert('success', `Applied ${selectedSubreddits.size} subreddit(s) to your search!`);
+                } else {
+                    subredditInput.value = 'all';
+                    showAlert('info', 'No subreddits selected. Set to search all of Reddit.');
+                }
+                
+                closeDiscoverModal();
+            }
+            
+            // Close modal when clicking outside
+            window.onclick = function(event) {
+                const modal = document.getElementById('discoverModal');
+                if (event.target === modal) {
+                    closeDiscoverModal();
+                }
+            }
         </script>
     </body>
     </html>
     '''
+
+@app.route('/api/discover_subreddits')
+def discover_subreddits():
+    """Discover subreddits by search term"""
+    try:
+        search_term = request.args.get('search', '').strip()
+        if not search_term:
+            return jsonify({'error': 'Search term is required', 'success': False})
+        
+        reddit = get_reddit_instance()
+        if not reddit:
+            return jsonify({'error': 'Reddit API not configured', 'success': False})
+        
+        discovered_subreddits = set()
+        
+        try:
+            # Search for subreddits by name
+            subreddit_results = reddit.subreddits.search_by_name(search_term, exact=False)
+            for sub in subreddit_results:
+                if len(discovered_subreddits) >= 25:  # Limit results
+                    break
+                try:
+                    # Get subreddit info
+                    sub_info = {
+                        'name': sub.display_name,
+                        'title': sub.title[:100] if hasattr(sub, 'title') and sub.title else sub.display_name,
+                        'description': (sub.public_description or '')[:200] if hasattr(sub, 'public_description') else '',
+                        'subscribers': getattr(sub, 'subscribers', 0) or 0,
+                        'url': f'https://reddit.com/r/{sub.display_name}'
+                    }
+                    if sub_info['subscribers'] > 50:  # Only include active subreddits
+                        discovered_subreddits.add(json.dumps(sub_info, sort_keys=True))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        
+        # Convert back to list and parse JSON
+        subreddit_list = []
+        for sub_json in list(discovered_subreddits)[:20]:  # Top 20 results
+            try:
+                subreddit_list.append(json.loads(sub_json))
+            except Exception:
+                continue
+        
+        # Sort by subscriber count
+        subreddit_list.sort(key=lambda x: x['subscribers'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'subreddits': subreddit_list,
+            'search_term': search_term,
+            'total_found': len(subreddit_list)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Search failed: {str(e)}', 'success': False})
 
 @app.route('/api/advanced_search')
 def api_advanced_search():
@@ -634,19 +968,48 @@ def api_advanced_search():
                 subreddit_obj = reddit.subreddit('all')
                 subreddit_display = 'all of Reddit'
             else:
-                # Clean subreddit name (remove r/ if present)
-                clean_subreddit = subreddit.replace('r/', '').replace('R/', '').strip()
-                subreddit_obj = reddit.subreddit(clean_subreddit)
+                # Handle comma-separated subreddits
+                subreddit_list = [s.replace('r/', '').replace('R/', '').strip() for s in subreddit.split(',') if s.strip()]
                 
-                # Test if subreddit exists by trying to access its display_name
-                try:
-                    _ = subreddit_obj.display_name
-                    subreddit_display = f'r/{clean_subreddit}'
-                except Exception:
-                    return jsonify({
-                        'success': False, 
-                        'error': f'Subreddit "{clean_subreddit}" not found or is private. Please check the spelling.'
-                    })
+                if len(subreddit_list) == 1:
+                    # Single subreddit
+                    clean_subreddit = subreddit_list[0]
+                    subreddit_obj = reddit.subreddit(clean_subreddit)
+                    
+                    # Test if subreddit exists
+                    try:
+                        _ = subreddit_obj.display_name
+                        subreddit_display = f'r/{clean_subreddit}'
+                    except Exception:
+                        return jsonify({
+                            'success': False, 
+                            'error': f'Subreddit "{clean_subreddit}" not found or is private. Please check the spelling.'
+                        })
+                else:
+                    # Multiple subreddits - combine them
+                    valid_subreddits = []
+                    for sub_name in subreddit_list:
+                        try:
+                            test_sub = reddit.subreddit(sub_name)
+                            _ = test_sub.display_name  # Test if accessible
+                            valid_subreddits.append(sub_name)
+                        except Exception:
+                            # Skip invalid subreddits but continue
+                            continue
+                    
+                    if not valid_subreddits:
+                        return jsonify({
+                            'success': False, 
+                            'error': f'None of the specified subreddits were found or accessible: {subreddit_list}'
+                        })
+                    
+                    # Create multi-subreddit object using + notation
+                    subreddit_obj = reddit.subreddit('+'.join(valid_subreddits))
+                    if len(valid_subreddits) == len(subreddit_list):
+                        subreddit_display = f"{len(valid_subreddits)} subreddits (r/{', r/'.join(valid_subreddits)})"
+                    else:
+                        subreddit_display = f"{len(valid_subreddits)} valid subreddits (r/{', r/'.join(valid_subreddits)})"
+                    
         except Exception as e:
             return jsonify({
                 'success': False, 
