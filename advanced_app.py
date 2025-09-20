@@ -589,6 +589,9 @@ def index():
                 <h1>🔍 Reddit Scraper Pro</h1>
                 <p>Advanced Reddit data mining with sentiment analysis, engagement metrics, and Excel export</p>
                 <div class="header-controls">
+                    <button class="settings-btn" onclick="testAlert()" style="background: red; margin-right: 10px;">
+                        🔴 TEST CLICK
+                    </button>
                     <button class="settings-btn" onclick="openSlackModal()">
                         <span>⚙️</span> Slack Integration
                     </button>
@@ -864,8 +867,22 @@ Salesforce" required></textarea>
         </div>
         
         <script>
+            // Debug: Test if JavaScript is loading
+            console.log('JavaScript is loading...');
+            
             let searchResults = null;
             let searchQuery = '';
+            
+            // Debug: Test basic functions
+            function testAlert() {
+                alert('JavaScript is working!');
+            }
+            
+            // Test function for debugging
+            window.debugTest = function() {
+                console.log('Debug test called');
+                alert('Debug test works!');
+            };
             
             
             // Tab functionality
