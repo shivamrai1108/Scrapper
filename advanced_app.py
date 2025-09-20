@@ -317,7 +317,8 @@ Salesforce" required></textarea>
                         </div>
                     </div>
                     
-                    <div class="filters">
+                    <!-- Advanced Filters Hidden
+                    <div class="filters" style="display: none;">
                         <h3>🔍 Advanced Filters</h3>
                         <div class="form-row">
                             <div class="form-group">
@@ -343,6 +344,7 @@ Salesforce" required></textarea>
                             </div>
                         </div>
                     </div>
+                    -->
                     
                     <button type="submit" class="btn-primary">🚀 Start Advanced Search</button>
                 </form>
@@ -370,23 +372,22 @@ Salesforce" required></textarea>
                     </div>
                     
                     <div class="tabs">
-                        <button class="tab active" onclick="showTab('overview')">📊 Overview</button>
-                        <button class="tab" onclick="showTab('sentiment')">😊 Sentiment</button>
-                        <button class="tab" onclick="showTab('engagement')">🚀 Engagement</button>
+                        <button class="tab active" onclick="showTab('engagement')">🚀 Engagement</button>
                         <button class="tab" onclick="showTab('data')">📋 Data Preview</button>
                     </div>
                     
-                    <div id="tab-overview" class="tab-content active">
+                    <!-- Hidden tabs -->
+                    <div id="tab-overview" class="tab-content" style="display: none;">
                         <h3>📊 Search Overview</h3>
                         <div id="overviewContent"></div>
                     </div>
                     
-                    <div id="tab-sentiment" class="tab-content">
+                    <div id="tab-sentiment" class="tab-content" style="display: none;">
                         <h3>😊 Sentiment Analysis</h3>
                         <div id="sentimentContent"></div>
                     </div>
                     
-                    <div id="tab-engagement" class="tab-content">
+                    <div id="tab-engagement" class="tab-content active">
                         <h3>🚀 Engagement Analysis</h3>
                         <div id="engagementContent"></div>
                     </div>
@@ -553,7 +554,7 @@ Salesforce" required></textarea>
                     </div>
                     <div class="metric">
                         <div class="metric-value">${avgScore.toFixed(1)}</div>
-                        <div class="metric-label">Avg Score</div>
+                        <div class="metric-label">Avg Upvotes</div>
                     </div>
                     <div class="metric">
                         <div class="metric-value">${totalComments.toLocaleString()}</div>
@@ -652,7 +653,7 @@ Salesforce" required></textarea>
                     <h4>🔥 Most Engaging Posts</h4>
                     <table class="data-table">
                         <thead>
-                            <tr><th>Title</th><th>Engagement Rate</th><th>Score</th><th>Comments</th><th>Subreddit</th></tr>
+                            <tr><th>Title</th><th>Engagement Rate</th><th>Upvotes</th><th>Comments</th><th>Subreddit</th></tr>
                         </thead>
                         <tbody>
                             ${topEngaging.map(p => `
@@ -678,7 +679,7 @@ Salesforce" required></textarea>
                             <tr>
                                 <th>Title</th>
                                 <th>Subreddit</th>
-                                <th>Score</th>
+                                <th>Upvotes</th>
                                 <th>Comments</th>
                                 <th>Sentiment</th>
                                 <th>Relevance</th>
