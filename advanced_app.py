@@ -1718,6 +1718,406 @@ def test_slack_integration(integration_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# ============ SLACK BOT SLASH COMMANDS ============
+
+@app.route('/api/slack/command', methods=['POST'])
+def handle_slack_command():
+    """Handle Slack slash commands like /reddit search AI startups"""
+    try:
+        # Verify the request is from Slack (in production, verify token)
+        if request.form.get('command') != '/reddit':
+            return jsonify({'text': 'Unknown command'})
+        
+        # Parse command
+        text = request.form.get('text', '').strip()
+        user_name = request.form.get('user_name', 'Unknown')
+        channel_name = request.form.get('channel_name', 'Unknown')
+        response_url = request.form.get('response_url')
+        
+        if not text:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': '''🔍 **Reddit Scraper Pro - Commands**
+
+**Usage:** `/reddit search [keywords] [options]`
+
+**Examples:**
+• `/reddit search AI startups` - Search all of Reddit
+• `/reddit search AI startups in technology` - Search specific subreddit
+• `/reddit search crypto top 50` - Search with result limit
+
+**Options:**
+• `in [subreddit]` - Search specific subreddit
+• `top/new/hot` - Sort method
+• `[number]` - Max results (default: 100)
+
+**Quick Commands:**
+• `/reddit help` - Show this help
+• `/reddit status` - Check system status'''
+            })
+        
+        # Handle help command
+        if text.lower() in ['help', '--help', '-h']:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': '''🔍 **Reddit Scraper Pro - Help**
+
+**Search Commands:**
+```/reddit search AI machine learning```
+```/reddit search startups in technology```
+```/reddit search crypto top 25```
+
+**Advanced Options:**
+• **Subreddit:** `in [subreddit_name]`
+• **Sort:** `top`, `hot`, `new`, `relevance`
+• **Limit:** Any number (max 500)
+• **Multiple keywords:** Separate with spaces
+
+**Examples:**
+• `/reddit search AI` → Search "AI" across all Reddit
+• `/reddit search python programming in learnpython` → Search specific subreddit
+• `/reddit search startup funding hot 50` → Hot posts, limit 50
+
+**System:**
+• `/reddit status` → Check if system is online
+• `/reddit help` → Show this help message'''
+            })
+        
+        # Handle status command
+        if text.lower() in ['status', '--status']:
+            reddit_status = "✅ Connected" if get_reddit_instance() else "❌ Not configured"
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': f'''📊 **Reddit Scraper Pro - Status**
+
+**System:** ✅ Online
+**Reddit API:** {reddit_status}
+**Search Engine:** ✅ Ready
+**Sentiment Analysis:** ✅ Active
+**Excel Export:** ✅ Available
+
+**Usage Today:** Active
+**Last Updated:** 2025-09-20
+
+*Ready to search Reddit!* 🚀'''
+            })
+        
+        # Parse search command
+        if not text.startswith('search '):
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': f'❌ Unknown command: `{text}`\n\nTry: `/reddit search AI startups` or `/reddit help`'
+            })
+        
+        # Remove 'search' and parse parameters
+        search_text = text[7:].strip()  # Remove 'search '
+        
+        if not search_text:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': '❌ Please provide keywords to search.\n\nExample: `/reddit search AI machine learning`'
+            })
+        
+        # Parse parameters
+        keywords, subreddit, max_results, sort_method = parse_slack_search_command(search_text)
+        
+        # Send immediate response
+        immediate_response = {
+            'response_type': 'in_channel',
+            'text': f'🔍 <@{user_name}> is searching Reddit for "{" ".join(keywords)}"...',
+            'attachments': [{
+                'color': '#1a73e8',
+                'text': f'**Keywords:** {", ".join(keywords)}\n**Subreddit:** {subreddit}\n**Max Results:** {max_results}\n**Sort:** {sort_method}',
+                'footer': 'Reddit Scraper Pro',
+                'footer_icon': 'https://reddit.com/favicon.ico'
+            }]
+        }
+        
+        # Start background search (non-blocking)
+        if response_url:
+            Thread(
+                target=perform_slack_search,
+                args=(keywords, subreddit, max_results, sort_method, response_url, user_name)
+            ).start()
+        
+        return jsonify(immediate_response)
+        
+    except Exception as e:
+        return jsonify({
+            'response_type': 'ephemeral',
+            'text': f'❌ Error processing command: {str(e)}'
+        })
+
+def parse_slack_search_command(search_text):
+    """Parse Slack search command into components"""
+    words = search_text.split()
+    keywords = []
+    subreddit = 'all'
+    max_results = 100
+    sort_method = 'relevance'
+    
+    i = 0
+    while i < len(words):
+        word = words[i].lower()
+        
+        # Check for subreddit specification
+        if word == 'in' and i + 1 < len(words):
+            subreddit = words[i + 1].replace('r/', '').replace('R/', '')
+            i += 2
+            continue
+        
+        # Check for sort method
+        if word in ['hot', 'new', 'top', 'relevance']:
+            sort_method = word
+            i += 1
+            continue
+        
+        # Check for number (max results)
+        if word.isdigit():
+            max_results = min(int(word), 500)  # Cap at 500
+            i += 1
+            continue
+        
+        # Otherwise, it's a keyword
+        keywords.append(words[i])
+        i += 1
+    
+    if not keywords:
+        keywords = ['reddit']  # Default search
+    
+    return keywords, subreddit, max_results, sort_method
+
+def perform_slack_search(keywords, subreddit, max_results, sort_method, response_url, user_name):
+    """Perform Reddit search and post results to Slack (background task)"""
+    try:
+        # Simulate the search API call
+        reddit = get_reddit_instance()
+        if not reddit:
+            post_slack_response(response_url, {
+                'text': '❌ Reddit API not configured. Please contact administrator.',
+                'response_type': 'ephemeral'
+            })
+            return
+        
+        # Create search parameters similar to web interface
+        search_query = ' OR '.join(keywords)
+        
+        # Perform search (reuse existing logic)
+        results = perform_reddit_search(
+            reddit=reddit,
+            keywords=keywords,
+            subreddit=subreddit,
+            max_results=max_results,
+            sort_method=sort_method,
+            days_back=0,
+            min_score=0,
+            min_comments=0,
+            min_engagement=0.0,
+            sentiment_filter='all'
+        )
+        
+        if results['success']:
+            # Format success response
+            posts = results['posts']
+            response = format_slack_search_results(posts, keywords, subreddit, user_name)
+        else:
+            # Format error response
+            response = {
+                'text': f'❌ Search failed: {results["error"]}',
+                'response_type': 'ephemeral'
+            }
+        
+        post_slack_response(response_url, response)
+        
+    except Exception as e:
+        post_slack_response(response_url, {
+            'text': f'❌ Search error: {str(e)}',
+            'response_type': 'ephemeral'
+        })
+
+def perform_reddit_search(reddit, keywords, subreddit, max_results, sort_method, days_back, min_score, min_comments, min_engagement, sentiment_filter):
+    """Core Reddit search function (reusable for both web and Slack)"""
+    try:
+        # Build search query
+        search_query = ' OR '.join(keywords)
+        
+        # Handle subreddit selection
+        if subreddit.lower() == 'all':
+            subreddit_obj = reddit.subreddit('all')
+            subreddit_display = 'all of Reddit'
+        else:
+            # Handle comma-separated or single subreddit
+            subreddit_list = [s.replace('r/', '').replace('R/', '').strip() for s in subreddit.split(',') if s.strip()]
+            
+            if len(subreddit_list) == 1:
+                clean_subreddit = subreddit_list[0]
+                subreddit_obj = reddit.subreddit(clean_subreddit)
+                subreddit_display = f'r/{clean_subreddit}'
+            else:
+                # Multiple subreddits
+                subreddit_obj = reddit.subreddit('+'.join(subreddit_list))
+                subreddit_display = f'r/{" + r/".join(subreddit_list)}'
+        
+        # Perform search based on sort method
+        if sort_method == 'hot':
+            search_results = subreddit_obj.hot(limit=max_results)
+        elif sort_method == 'new':
+            search_results = subreddit_obj.new(limit=max_results)
+        elif sort_method == 'top':
+            search_results = subreddit_obj.top('all', limit=max_results)
+        else:
+            # Use search for relevance
+            search_results = subreddit_obj.search(search_query, sort='relevance', limit=max_results)
+        
+        # Process results
+        posts = []
+        for post in search_results:
+            try:
+                # Calculate metrics
+                relevance_score, engagement_rate = calculate_metrics(post, keywords)
+                sentiment, sentiment_score = simple_sentiment(f"{post.title} {post.selftext or ''}")
+                
+                # Apply filters
+                if post.score < min_score or post.num_comments < min_comments:
+                    continue
+                if engagement_rate < min_engagement:
+                    continue
+                if sentiment_filter != 'all' and sentiment != sentiment_filter:
+                    continue
+                
+                post_data = {
+                    'id': post.id,
+                    'title': post.title,
+                    'url': post.url,
+                    'score': post.score,
+                    'num_comments': post.num_comments,
+                    'subreddit': post.subreddit.display_name,
+                    'author': str(post.author) if post.author else '[deleted]',
+                    'created_utc': post.created_utc,
+                    'date': datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M'),
+                    'selftext': (post.selftext or '')[:500],  # Limit text
+                    'relevance_score': relevance_score,
+                    'engagement_rate': engagement_rate,
+                    'sentiment': sentiment,
+                    'sentiment_score': sentiment_score
+                }
+                posts.append(post_data)
+                
+            except Exception as e:
+                continue  # Skip problematic posts
+        
+        return {
+            'success': True,
+            'posts': posts,
+            'search_query': search_query,
+            'subreddit_searched': subreddit_display,
+            'total_posts': len(posts)
+        }
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'posts': []
+        }
+
+def format_slack_search_results(posts, keywords, subreddit, user_name):
+    """Format Reddit search results for Slack response"""
+    if not posts:
+        return {
+            'text': f'🔍 <@{user_name}> searched for "{" ".join(keywords)}" - No results found.',
+            'response_type': 'in_channel',
+            'attachments': [{
+                'color': 'warning',
+                'text': f'No posts found for "{" ".join(keywords)}" in r/{subreddit}. Try different keywords or subreddits.',
+                'footer': 'Reddit Scraper Pro'
+            }]
+        }
+    
+    # Calculate summary stats
+    total_posts = len(posts)
+    avg_score = sum(p['score'] for p in posts) / total_posts
+    total_comments = sum(p['num_comments'] for p in posts)
+    positive_posts = len([p for p in posts if p['sentiment'] == 'positive'])
+    positive_pct = (positive_posts / total_posts * 100) if total_posts > 0 else 0
+    
+    # Get top 5 posts by engagement
+    top_posts = sorted(posts, key=lambda x: x['engagement_rate'], reverse=True)[:5]
+    
+    # Format subreddit display
+    subreddit_display = f'r/{subreddit}' if subreddit != 'all' else 'all of Reddit'
+    
+    # Create main response
+    response = {
+        'text': f'🎉 <@{user_name}> found {total_posts} posts for "{" ".join(keywords)}"!',
+        'response_type': 'in_channel',
+        'attachments': [
+            {
+                'color': 'good',
+                'title': '📊 Search Summary',
+                'fields': [
+                    {'title': 'Keywords', 'value': ', '.join(keywords), 'short': True},
+                    {'title': 'Subreddit', 'value': subreddit_display, 'short': True},
+                    {'title': 'Posts Found', 'value': f'{total_posts:,}', 'short': True},
+                    {'title': 'Avg Upvotes', 'value': f'{avg_score:.1f}', 'short': True},
+                    {'title': 'Total Comments', 'value': f'{total_comments:,}', 'short': True},
+                    {'title': 'Positive Sentiment', 'value': f'{positive_pct:.1f}%', 'short': True}
+                ],
+                'footer': 'Reddit Scraper Pro',
+                'footer_icon': 'https://reddit.com/favicon.ico'
+            }
+        ]
+    }
+    
+    # Add top posts
+    if top_posts:
+        posts_text = '\n'.join([
+            f'🔥 **{post["title"][:60]}**{"..." if len(post["title"]) > 60 else ""}\n'
+            f'   👆 {post["score"]} upvotes • 💬 {post["num_comments"]} comments • r/{post["subreddit"]}\n'
+            f'   🔗 <{post["url"]}|View Post>\n'
+            for post in top_posts
+        ])
+        
+        response['attachments'].append({
+            'color': '#ff6b35',
+            'title': f'🔥 Top {len(top_posts)} Posts by Engagement',
+            'text': posts_text,
+            'mrkdwn_in': ['text']
+        })
+    
+    # Add download link (simulate)
+    web_url = 'https://scrapper-eight-alpha.vercel.app'
+    response['attachments'].append({
+        'color': '#1a73e8',
+        'title': '📎 Get Full Analysis',
+        'text': f'For complete data analysis and Excel export, visit: <{web_url}|Reddit Scraper Pro>',
+        'actions': [
+            {
+                'type': 'button',
+                'text': '🌐 Open Web App',
+                'url': web_url
+            },
+            {
+                'type': 'button',
+                'text': '🔍 Search Again',
+                'name': 'search_again',
+                'value': f'/reddit search {"; ".join(keywords)}'
+            }
+        ]
+    })
+    
+    return response
+
+def post_slack_response(response_url, data):
+    """Post response to Slack using response URL"""
+    try:
+        import requests
+        response = requests.post(response_url, json=data, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        print(f'Failed to post Slack response: {e}')
+        return False
+
 @app.route('/health')
 def health():
     return jsonify({'status': 'healthy', 'service': 'Reddit Scraper Pro Advanced'})
