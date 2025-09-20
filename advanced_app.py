@@ -524,12 +524,15 @@ def index():
             @keyframes slideIn { from { transform: translateY(-50px); } to { transform: translateY(0); } }
             
             /* Slack Integration Styles */
+            .header-controls {
+                display: flex; justify-content: center; gap: 15px; margin-top: 20px;
+            }
             .settings-btn {
-                position: absolute; top: 20px; right: 20px;
                 background: #4a154b; color: white; border: none;
                 padding: 10px 20px; border-radius: 6px; cursor: pointer;
                 font-size: 14px; font-weight: bold; text-decoration: none;
                 display: inline-flex; align-items: center; gap: 8px;
+                transition: background 0.3s;
             }
             .settings-btn:hover { background: #611f69; }
             
@@ -582,12 +585,14 @@ def index():
     </head>
     <body>
         <div class="container">
-            <div class="header" style="position: relative;">
-                <button class="settings-btn" onclick="openSlackModal()">
-                    <span>⚙️</span> Slack Integration
-                </button>
+            <div class="header">
                 <h1>🔍 Reddit Scraper Pro</h1>
                 <p>Advanced Reddit data mining with sentiment analysis, engagement metrics, and Excel export</p>
+                <div class="header-controls">
+                    <button class="settings-btn" onclick="openSlackModal()">
+                        <span>⚙️</span> Slack Integration
+                    </button>
+                </div>
             </div>
             
             <div class="search-card">
