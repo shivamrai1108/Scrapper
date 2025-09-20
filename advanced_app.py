@@ -589,7 +589,7 @@ def index():
                 <h1>🔍 Reddit Scraper Pro</h1>
                 <p>Advanced Reddit data mining with sentiment analysis, engagement metrics, and Excel export</p>
                 <div class="header-controls">
-                    <button id="slackIntegrationBtn" class="settings-btn">
+                    <button class="settings-btn" onclick="openSlackModal()">
                         <span>⚙️</span> Slack Integration
                     </button>
                 </div>
@@ -609,7 +609,7 @@ Salesforce" required></textarea>
                             <label for="subreddit">Subreddit</label>
                             <input type="text" id="subreddit" name="subreddit" value="all" placeholder="all, saas, startups, entrepreneur">
                             <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Enter 'all' for all Reddit or specific subreddit name (e.g., 'saas', 'startups')</small>
-                            <button type="button" id="discoverSubredditsBtn" class="discover-btn">🔍 Discover Subreddits</button>
+                            <button type="button" class="discover-btn" onclick="openDiscoverModal()">🔍 Discover Subreddits</button>
                         </div>
                     </div>
                     
@@ -738,13 +738,13 @@ Salesforce" required></textarea>
             <div class="modal-content">
                 <div class="modal-header">
                     <h2 class="modal-title">🔍 Discover Subreddits</h2>
-                    <button id="closeDiscoverBtn" class="close-btn">&times;</button>
+                    <button class="close-btn" onclick="closeDiscoverModal()">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="modal-search">
                         <h4 style="margin-bottom: 10px; color: #333;">Search for Subreddits</h4>
-                        <input type="text" id="modalSearchInput" placeholder="Search by topic (e.g., 'technology', 'startups', 'marketing')">
-                        <button id="searchSubredditsBtn" class="search-btn">🔍 Search</button>
+                        <input type="text" id="modalSearchInput" placeholder="Search by topic (e.g., 'technology', 'startups', 'marketing')" onkeypress="if(event.key==='Enter') searchSubredditsInModal()">
+                        <button class="search-btn" onclick="searchSubredditsInModal()">🔍 Search</button>
                     </div>
                     
                     <div id="selectedSubreddits" class="selected-subreddits" style="display: none;">
@@ -763,8 +763,8 @@ Salesforce" required></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="applySubredditsBtn" class="btn-primary" style="width: auto;">Apply Selected</button>
-                    <button id="cancelDiscoverBtn" class="btn-primary" style="background: #6c757d; margin-left: 10px; width: auto;">Cancel</button>
+                    <button class="btn-primary" onclick="applySelectedSubreddits()" style="width: auto;">Apply Selected</button>
+                    <button class="btn-primary" onclick="closeDiscoverModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -774,7 +774,7 @@ Salesforce" required></textarea>
             <div class="modal-content" style="max-width: 900px;">
                 <div class="modal-header">
                     <h2 class="modal-title">⚙️ Slack Integration Settings</h2>
-                    <button id="closeSlackBtn" class="close-btn">&times;</button>
+                    <button class="close-btn" onclick="closeSlackModal()">&times;</button>
                 </div>
                 <div class="modal-body">
                     <!-- Add New Integration -->
@@ -857,8 +857,8 @@ Salesforce" required></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button id="refreshSlackBtn" class="btn-primary" style="background: #28a745; width: auto;">🔄 Refresh</button>
-                    <button id="closeSlackModalBtn" class="btn-primary" style="background: #6c757d; margin-left: 10px; width: auto;">Close</button>
+                    <button class="btn-primary" onclick="loadSlackSettings()" style="background: #28a745; width: auto;">🔄 Refresh</button>
+                    <button class="btn-primary" onclick="closeSlackModal()" style="background: #6c757d; margin-left: 10px; width: auto;">Close</button>
                 </div>
             </div>
         </div>
@@ -867,70 +867,6 @@ Salesforce" required></textarea>
             let searchResults = null;
             let searchQuery = '';
             
-            // Initialize all event listeners when DOM loads
-            document.addEventListener('DOMContentLoaded', function() {
-                // Slack Integration Button
-                const slackBtn = document.getElementById('slackIntegrationBtn');
-                if (slackBtn) {
-                    slackBtn.addEventListener('click', openSlackModal);
-                }
-                
-                // Discover Subreddits Button
-                const discoverBtn = document.getElementById('discoverSubredditsBtn');
-                if (discoverBtn) {
-                    discoverBtn.addEventListener('click', openDiscoverModal);
-                }
-                
-                // Modal close buttons
-                const closeDiscoverBtn = document.getElementById('closeDiscoverBtn');
-                if (closeDiscoverBtn) {
-                    closeDiscoverBtn.addEventListener('click', closeDiscoverModal);
-                }
-                
-                const closeSlackBtn = document.getElementById('closeSlackBtn');
-                if (closeSlackBtn) {
-                    closeSlackBtn.addEventListener('click', closeSlackModal);
-                }
-                
-                const closeSlackModalBtn = document.getElementById('closeSlackModalBtn');
-                if (closeSlackModalBtn) {
-                    closeSlackModalBtn.addEventListener('click', closeSlackModal);
-                }
-                
-                // Search subreddits button
-                const searchSubredditsBtn = document.getElementById('searchSubredditsBtn');
-                if (searchSubredditsBtn) {
-                    searchSubredditsBtn.addEventListener('click', searchSubredditsInModal);
-                }
-                
-                // Apply subreddits button
-                const applySubredditsBtn = document.getElementById('applySubredditsBtn');
-                if (applySubredditsBtn) {
-                    applySubredditsBtn.addEventListener('click', applySelectedSubreddits);
-                }
-                
-                // Cancel discover button
-                const cancelDiscoverBtn = document.getElementById('cancelDiscoverBtn');
-                if (cancelDiscoverBtn) {
-                    cancelDiscoverBtn.addEventListener('click', closeDiscoverModal);
-                }
-                
-                // Refresh slack button
-                const refreshSlackBtn = document.getElementById('refreshSlackBtn');
-                if (refreshSlackBtn) {
-                    refreshSlackBtn.addEventListener('click', loadSlackSettings);
-                }
-                
-                // Enter key support for search input
-                const modalSearchInput = document.getElementById('modalSearchInput');
-                if (modalSearchInput) {
-                    modalSearchInput.addEventListener('keypress', function(event) {
-                        if (event.key === 'Enter') {
-                            searchSubredditsInModal();
-                        }
-                    });
-                }
-            });
             
             // Tab functionality
             function showTab(tabName) {
@@ -1287,23 +1223,13 @@ Salesforce" required></textarea>
                                         <div class="subreddit-description">${sub.description || sub.title}</div>
                                     </div>
                                     <button class="add-btn" 
-                                            data-subreddit-name="${sub.name}" 
+                                            onclick="toggleSubreddit('${sub.name}')" 
                                             ${isSelected ? 'disabled' : ''}>
                                         ${isSelected ? '✓ Added' : '+ Add'}
                                     </button>
                                 </div>
                             `;
                         }).join('');
-                        
-                        // Add event listeners to dynamically created add buttons
-                        resultsList.querySelectorAll('.add-btn').forEach(btn => {
-                            btn.addEventListener('click', function() {
-                                if (!this.disabled) {
-                                    const subredditName = this.getAttribute('data-subreddit-name');
-                                    toggleSubreddit(subredditName);
-                                }
-                            });
-                        });
                         results.style.display = 'block';
                     } else {
                         resultsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No subreddits found. Try a different search term.</p>';
@@ -1344,17 +1270,9 @@ Salesforce" required></textarea>
                     selectedList.innerHTML = Array.from(selectedSubreddits).map(sub => `
                         <div class="selected-item">
                             <span class="selected-name">r/${sub}</span>
-                            <button class="remove-btn" data-subreddit-name="${sub}" title="Remove">×</button>
+                            <button class="remove-btn" onclick="removeSelectedSubreddit('${sub}')" title="Remove">×</button>
                         </div>
                     `).join('');
-                    
-                    // Add event listeners to remove buttons
-                    selectedList.querySelectorAll('.remove-btn').forEach(btn => {
-                        btn.addEventListener('click', function() {
-                            const subredditName = this.getAttribute('data-subreddit-name');
-                            removeSelectedSubreddit(subredditName);
-                        });
-                    });
                     selectedSection.style.display = 'block';
                 } else {
                     selectedSection.style.display = 'none';
@@ -1438,26 +1356,11 @@ Salesforce" required></textarea>
                                 `<br><strong>Keywords:</strong> ${integration.keyword_filters.join(', ')}` : ''}
                         </div>
                         <div class="integration-actions">
-                            <button class="btn-sm btn-test" data-integration-id="${integration.id}">⚙️ Test</button>
-                            <button class="btn-sm btn-delete" data-integration-id="${integration.id}">🗑️ Delete</button>
+                            <button class="btn-sm btn-test" onclick="testIntegration('${integration.id}')">⚙️ Test</button>
+                            <button class="btn-sm btn-delete" onclick="deleteIntegration('${integration.id}')">🗑️ Delete</button>
                         </div>
                     </div>
                 `).join('');
-                
-                // Add event listeners to dynamically created buttons
-                container.querySelectorAll('.btn-test').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const integrationId = this.getAttribute('data-integration-id');
-                        testIntegration(integrationId);
-                    });
-                });
-                
-                container.querySelectorAll('.btn-delete').forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const integrationId = this.getAttribute('data-integration-id');
-                        deleteIntegration(integrationId);
-                    });
-                });
             }
             
             function displayAuditLog(auditLog) {
