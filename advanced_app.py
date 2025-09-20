@@ -118,7 +118,12 @@ def validate_slack_webhook(webhook_url):
         return False, "Webhook URL is required"
     
     if not webhook_url.startswith('https://hooks.slack.com/services/'):
-        return False, "Invalid Slack webhook URL format"
+        return False, "Invalid Slack webhook URL format. Must start with 'https://hooks.slack.com/services/'"
+    
+    # Basic format check for Slack webhook URL structure
+    parts = webhook_url.replace('https://hooks.slack.com/services/', '').split('/')
+    if len(parts) != 3:
+        return False, "Invalid webhook URL structure. Should be: https://hooks.slack.com/services/T.../B.../..."
     
     return True, "Valid webhook URL"
 
@@ -126,7 +131,6 @@ def test_slack_webhook(webhook_url, channel_name):
     """Test a Slack webhook by sending a test message"""
     try:
         message = {
-            "channel": channel_name,
             "username": "Reddit Scraper Pro",
             "icon_emoji": ":mag:",
             "text": ":wave: Test connection successful!",
@@ -135,12 +139,12 @@ def test_slack_webhook(webhook_url, channel_name):
                 "fields": [
                     {
                         "title": "Integration Status",
-                        "value": "Your Reddit Scraper Pro is now connected to this Slack channel!",
+                        "value": f"Your Reddit Scraper Pro is now connected to {channel_name}!",
                         "short": False
                     },
                     {
                         "title": "Next Steps",
-                        "value": "Run a search to receive notifications about your Reddit analytics.",
+                        "value": "Run a search on the web app to receive notifications, or use `/reddit search [keywords]` in Slack!",
                         "short": False
                     }
                 ],
@@ -150,14 +154,28 @@ def test_slack_webhook(webhook_url, channel_name):
             }]
         }
         
-        response = requests.post(webhook_url, json=message, timeout=10)
+        print(f"Testing webhook: {webhook_url[:50]}...")
+        response = requests.post(webhook_url, json=message, timeout=15)
+        
+        print(f"Webhook response: {response.status_code} - {response.text[:200]}")
+        
         if response.status_code == 200:
             return True, "Test message sent successfully!"
+        elif response.status_code == 404:
+            return False, "Webhook URL not found. Please check the URL or regenerate it in Slack."
+        elif response.status_code == 403:
+            return False, "Webhook access denied. Please check webhook permissions in Slack."
+        elif response.status_code == 400:
+            return False, "Invalid webhook request. The webhook URL might be malformed."
         else:
-            return False, f"Failed to send test message. Status code: {response.status_code}"
+            return False, f"Webhook test failed with status {response.status_code}. Response: {response.text[:100]}"
             
+    except requests.exceptions.Timeout:
+        return False, "Webhook request timed out. Please check your internet connection."
+    except requests.exceptions.ConnectionError:
+        return False, "Cannot connect to Slack. Please check the webhook URL and try again."
     except Exception as e:
-        return False, f"Error testing webhook: {str(e)}"
+        return False, f"Webhook test error: {str(e)}"
 
 def send_slack_notification(webhook_url, channel, search_data, posts, retry_count=0):
     """Send a formatted notification to Slack about completed search"""
@@ -1010,9 +1028,14 @@ def index():
         }
         
         async function testIntegration(integrationId) {
+            console.log('Test button clicked for integration:', integrationId);
+            
             try {
+                console.log('Sending test request to:', `/api/slack/test/${integrationId}`);
                 const response = await fetch(`/api/slack/test/${integrationId}`, { method: 'POST' });
                 const result = await response.json();
+                
+                console.log('Test response:', result);
                 
                 if (result.success) {
                     showAlert('success', `Test successful! 🚀 ${result.message}`);
@@ -1022,16 +1045,26 @@ def index():
                 
                 setTimeout(() => loadSlackSettings(), 1000);
             } catch (error) {
+                console.log('Test error:', error);
                 showAlert('error', `Network error: ${error.message}`);
             }
         }
         
         async function deleteIntegration(integrationId) {
-            if (!confirm('Are you sure you want to delete this Slack integration?')) return;
+            console.log('Delete button clicked for integration:', integrationId);
+            
+            if (!confirm('Are you sure you want to delete this Slack integration?')) {
+                console.log('Delete cancelled by user');
+                return;
+            }
+            
+            console.log('Sending DELETE request to:', `/api/slack/integration/${integrationId}`);
             
             try {
                 const response = await fetch(`/api/slack/integration/${integrationId}`, { method: 'DELETE' });
                 const result = await response.json();
+                
+                console.log('Delete response:', result);
                 
                 if (result.success) {
                     showAlert('success', 'Integration deleted successfully!');
@@ -1040,6 +1073,7 @@ def index():
                     showAlert('error', result.error);
                 }
             } catch (error) {
+                console.log('Delete error:', error);
                 showAlert('error', `Network error: ${error.message}`);
             }
         }
