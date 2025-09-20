@@ -341,57 +341,380 @@ def process_slack_notifications(search_data, posts):
 
 @app.route('/')
 def index():
-    # TEMPORARY: Simple test page to debug JavaScript
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Reddit Scraper Pro - DEBUG</title>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            button { padding: 15px; margin: 10px; font-size: 16px; cursor: pointer; }
-            .test-btn { background: red; color: white; }
-            .slack-btn { background: purple; color: white; }
-            .discover-btn { background: orange; color: white; }
-        </style>
-    </head>
-    <body>
-        <h1>🔍 Reddit Scraper Pro - DEBUG MODE</h1>
-        <p>Testing JavaScript functionality:</p>
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <title>🔍 Reddit Scraper Pro</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { color: #1a73e8; font-size: 2.5rem; margin-bottom: 10px; }
+        .header p { color: #666; font-size: 1.1rem; }
+        .header-controls { display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
         
-        <button class="test-btn" onclick="testJS()">🔴 TEST JAVASCRIPT</button>
-        <button class="slack-btn" onclick="alert('Slack button works!')">⚙️ Test Slack Button</button>
-        <button class="discover-btn" onclick="alert('Discover button works!')">🔍 Test Discover Button</button>
+        .settings-btn { background: #4a154b; color: white; border: none; padding: 10px 20px; 
+                       border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; 
+                       display: inline-flex; align-items: center; gap: 8px; transition: background 0.3s; }
+        .settings-btn:hover { background: #611f69; }
         
-        <div id="results" style="margin-top: 20px; padding: 20px; background: #f0f0f0; display: none;">
-            <h3>Results will show here</h3>
-            <p id="result-text">No results yet</p>
+        .search-card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-row { display: flex; gap: 20px; margin-bottom: 20px; align-items: end; }
+        .form-group { flex: 1; }
+        .form-group.half { flex: 0.5; }
+        
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input, select, textarea, button { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; 
+                                         font-size: 14px; transition: border-color 0.3s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #1a73e8; }
+        textarea { resize: vertical; min-height: 100px; }
+        
+        .btn-primary { background: #1a73e8; color: white; border: none; cursor: pointer; 
+                       font-weight: bold; font-size: 16px; padding: 15px; }
+        .btn-primary:hover { background: #1557b0; }
+        
+        .discover-btn { background: #ff6b35; color: white; border: none; cursor: pointer;
+                       font-size: 14px; padding: 8px 16px; border-radius: 4px; margin-top: 8px;
+                       font-weight: bold; transition: background 0.3s; width: auto; }
+        .discover-btn:hover { background: #e55a2e; }
+        
+        #loading { display: none; text-align: center; padding: 40px; background: white; border-radius: 10px; margin: 20px 0; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #1a73e8; border-radius: 50%; 
+                  width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .results { margin-top: 30px; }
+        .results-card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .metrics { display: flex; gap: 20px; margin-bottom: 30px; }
+        .metric { flex: 1; text-align: center; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .metric-value { font-size: 2rem; font-weight: bold; color: #1a73e8; }
+        .metric-label { color: #666; margin-top: 5px; }
+        
+        .tabs { display: flex; border-bottom: 2px solid #eee; margin-bottom: 20px; }
+        .tab { padding: 12px 24px; cursor: pointer; background: none; border: none; font-size: 16px; }
+        .tab.active { border-bottom: 2px solid #1a73e8; color: #1a73e8; font-weight: bold; }
+        .tab:hover { background: #f8f9fa; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .data-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .data-table th, .data-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .data-table th { background: #f8f9fa; font-weight: bold; }
+        .data-table tr:hover { background: #f8f9fa; }
+        .data-table a { color: #1a73e8; text-decoration: none; }
+        .data-table a:hover { text-decoration: underline; }
+        
+        .download-btn { background: #0f9d58; color: white; padding: 15px 30px; border: none; 
+                       border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; 
+                       margin: 20px 0; display: inline-block; text-decoration: none; }
+        .download-btn:hover { background: #0d8043; }
+        
+        .alert { padding: 15px; border-radius: 6px; margin: 15px 0; }
+        .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Reddit Scraper Pro</h1>
+            <p>Advanced Reddit data mining with sentiment analysis, engagement metrics, and Excel export</p>
+            <div class="header-controls">
+                <button class="settings-btn" onclick="openSlackModal()">
+                    <span>⚙️</span> Slack Integration
+                </button>
+            </div>
         </div>
         
-        <script>
-            console.log('Simple JavaScript loaded successfully!');
+        <div class="search-card">
+            <form id="searchForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="keywords">Keywords (one per line)</label>
+                        <textarea id="keywords" name="keywords" placeholder="AI\nstartups\ntechnology" required></textarea>
+                    </div>
+                    <div class="form-group half">
+                        <label for="subreddit">Subreddit</label>
+                        <input type="text" id="subreddit" name="subreddit" value="all" placeholder="all, technology, startups">
+                        <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">Enter 'all' for all Reddit or specific subreddit names</small>
+                        <button type="button" class="discover-btn" onclick="openDiscoverModal()">🔍 Discover Subreddits</button>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="max_results">Max Results</label>
+                        <select id="max_results" name="max_results">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="250">250</option>
+                            <option value="500">500</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="sort_method">Sort Method</label>
+                        <select id="sort_method" name="sort_method">
+                            <option value="relevance" selected>Relevance</option>
+                            <option value="hot">Hot</option>
+                            <option value="new">New</option>
+                            <option value="top">Top</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="days_back">Days Back</label>
+                        <select id="days_back" name="days_back">
+                            <option value="0" selected>All Time</option>
+                            <option value="1">Last 24 Hours</option>
+                            <option value="7">Last Week</option>
+                            <option value="30">Last Month</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn-primary">🚀 Start Advanced Search</button>
+            </form>
+        </div>
+        
+        <div id="loading">
+            <div class="spinner"></div>
+            <p><strong id="loadingText">Searching Reddit and analyzing data...</strong></p>
+            <p id="loadingSubtext">This may take a few moments depending on the number of results.</p>
+        </div>
+        
+        <div id="results" class="results" style="display: none;">
+            <div class="results-card">
+                <div id="metrics" class="metrics"></div>
+                <div id="downloadSection" style="display: none; text-align: center; margin: 20px 0; padding: 20px; background: #f0f9ff; border-radius: 10px; border: 2px dashed #1a73e8;">
+                    <h4 style="color: #1a73e8; margin-bottom: 10px;">📊 Export Your Data</h4>
+                    <button id="downloadBtn" class="download-btn" style="font-size: 18px; padding: 15px 40px;">📎 Download Excel Report</button>
+                    <p style="color: #666; margin-top: 10px; font-size: 14px;">Includes all post data + analytics summary</p>
+                </div>
+                
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('engagement')">🚀 Engagement</button>
+                    <button class="tab" onclick="showTab('data')">📋 Data Preview</button>
+                </div>
+                
+                <div id="tab-engagement" class="tab-content active">
+                    <h3>🚀 Engagement Analysis</h3>
+                    <div id="engagementContent"></div>
+                </div>
+                
+                <div id="tab-data" class="tab-content">
+                    <h3>📋 Data Preview</h3>
+                    <div id="dataContent"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let searchResults = null;
+        let searchQuery = '';
+        
+        // Tab functionality
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // Form submission
+        document.getElementById('searchForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
             
-            function testJS() {
-                console.log('testJS called');
-                alert('🎉 JAVASCRIPT IS WORKING!');
-                document.getElementById('results').style.display = 'block';
-                document.getElementById('result-text').textContent = 'JavaScript test successful at ' + new Date();
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            
+            const formData = new FormData(this);
+            const params = new URLSearchParams(formData);
+            
+            // Add default values for simplified form
+            params.set('min_score', '0');
+            params.set('min_comments', '0');
+            params.set('min_engagement', '0');
+            params.set('sentiment_filter', 'all');
+            
+            try {
+                const keywords = document.getElementById('keywords').value.trim();
+                if (!keywords) {
+                    loading.style.display = 'none';
+                    showAlert('error', 'Please enter at least one keyword.');
+                    return;
+                }
+                
+                const response = await fetch('/api/advanced_search?' + params.toString());
+                const data = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (data.success) {
+                    searchResults = data.posts;
+                    searchQuery = data.search_query;
+                    displayResults(data);
+                    results.style.display = 'block';
+                } else {
+                    showAlert('error', `Error: ${data.error}`);
+                }
+            } catch (error) {
+                loading.style.display = 'none';
+                showAlert('error', `Network error: ${error.message}`);
+            }
+        });
+        
+        function displayResults(data) {
+            displayMetrics(data);
+            displayEngagement(data.posts);
+            displayData(data.posts);
+            
+            // Show download section and attach event listener
+            const downloadSection = document.getElementById('downloadSection');
+            if (downloadSection) {
+                downloadSection.style.display = 'block';
+                const downloadBtn = document.getElementById('downloadBtn');
+                if (downloadBtn) {
+                    downloadBtn.onclick = function() {
+                        if (searchResults) {
+                            downloadExcel(searchResults, searchQuery);
+                        }
+                    };
+                }
             }
             
-            // Simple functions to test
-            function openSlackModal() {
-                alert('Slack modal would open here!');
+            const subredditText = data.subreddit_searched ? ` in ${data.subreddit_searched}` : '';
+            showAlert('success', `🎉 Found ${data.total_posts} posts${subredditText}! Analysis complete.`);
+        }
+        
+        function displayMetrics(data) {
+            const metrics = document.getElementById('metrics');
+            const posts = data.posts;
+            
+            if (posts.length === 0) {
+                metrics.innerHTML = '<p style="text-align: center; color: #666;">No posts found matching your criteria.</p>';
+                return;
             }
             
-            function openDiscoverModal() {
-                alert('Discover modal would open here!');
-            }
-        </script>
-    </body>
-    </html>
-    '''
+            const avgScore = posts.reduce((sum, p) => sum + p.score, 0) / posts.length;
+            const totalComments = posts.reduce((sum, p) => sum + p.num_comments, 0);
+            const avgRelevance = posts.reduce((sum, p) => sum + p.relevance_score, 0) / posts.length;
+            const positivePct = posts.filter(p => p.sentiment === 'positive').length / posts.length * 100;
+            
+            metrics.innerHTML = `
+                <div class="metric">
+                    <div class="metric-value">${data.total_posts}</div>
+                    <div class="metric-label">Posts Found</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${avgScore.toFixed(1)}</div>
+                    <div class="metric-label">Avg Upvotes</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${totalComments.toLocaleString()}</div>
+                    <div class="metric-label">Total Comments</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${avgRelevance.toFixed(1)}</div>
+                    <div class="metric-label">Avg Relevance</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value">${positivePct.toFixed(1)}%</div>
+                    <div class="metric-label">Positive Sentiment</div>
+                </div>
+            `;
+        }
+        
+        function displayEngagement(posts) {
+            const topEngaging = posts.sort((a, b) => b.engagement_rate - a.engagement_rate).slice(0, 10);
+            const engagementContent = document.getElementById('engagementContent');
+            
+            engagementContent.innerHTML = `
+                <h4>🔥 Most Engaging Posts</h4>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Title</th><th>Engagement Rate</th><th>Upvotes</th><th>Comments</th><th>Subreddit</th></tr>
+                    </thead>
+                    <tbody>
+                        ${topEngaging.map(p => `
+                            <tr>
+                                <td><a href="${p.url}" target="_blank">${p.title.substring(0, 60)}...</a></td>
+                                <td>${p.engagement_rate.toFixed(2)}%</td>
+                                <td>${p.score}</td>
+                                <td>${p.num_comments}</td>
+                                <td>r/${p.subreddit}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        function displayData(posts) {
+            const dataContent = document.getElementById('dataContent');
+            dataContent.innerHTML = `
+                <p><strong>Showing first 20 posts</strong> (download Excel for complete data)</p>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Title</th><th>Subreddit</th><th>Upvotes</th><th>Comments</th><th>Sentiment</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                        ${posts.slice(0, 20).map(p => `
+                            <tr>
+                                <td><a href="${p.url}" target="_blank">${p.title.substring(0, 50)}...</a></td>
+                                <td>r/${p.subreddit}</td>
+                                <td>${p.score}</td>
+                                <td>${p.num_comments}</td>
+                                <td style="color: ${p.sentiment === 'positive' ? '#0f9d58' : p.sentiment === 'negative' ? '#ea4335' : '#9aa0a6'}">${p.sentiment}</td>
+                                <td>${p.date}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        function downloadExcel(posts, query) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/download_excel';
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'data';
+            input.value = JSON.stringify({posts, query});
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+        
+        function showAlert(type, message) {
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.innerHTML = message;
+            document.querySelector('.container').insertBefore(alert, document.querySelector('.search-card'));
+            setTimeout(() => alert.remove(), 5000);
+        }
+        
+        // Placeholder functions for buttons (to be implemented)
+        function openSlackModal() {
+            showAlert('info', '🔧 Slack integration coming soon! This will allow you to receive search notifications in your Slack channel.');
+        }
+        
+        function openDiscoverModal() {
+            showAlert('info', '🔧 Discover subreddits feature coming soon! This will help you find relevant communities to search.');
+        }
+    </script>
+</body>
+</html>
+'''
 @app.route('/api/discover_subreddits')
 def discover_subreddits():
     """Discover subreddits by search term"""
