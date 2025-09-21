@@ -230,6 +230,75 @@ def slack_install():
     """Start Slack OAuth installation process"""
     # Slack OAuth parameters
     client_id = os.getenv('SLACK_CLIENT_ID', 'your_client_id_here')
+    
+    # Check if Slack app is properly configured
+    if client_id == 'your_client_id_here' or not client_id or 'client_id' in client_id.lower():
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Setup Required - Reddit Scraper Pro</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                       background: #f8f9fa; margin: 0; padding: 40px; }}
+                .container {{ max-width: 700px; margin: 0 auto; background: white; padding: 40px; 
+                            border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }}
+                .logo {{ font-size: 4rem; text-align: center; margin-bottom: 20px; }}
+                h1 {{ color: #dc3545; text-align: center; margin-bottom: 20px; }}
+                h2 {{ color: #1a73e8; margin-bottom: 15px; }}
+                .setup-box {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; 
+                             border-left: 4px solid #1a73e8; }}
+                code {{ background: #e9ecef; padding: 2px 6px; border-radius: 4px; font-family: monospace; }}
+                .btn {{ background: #1a73e8; color: white; padding: 12px 24px; border: none; 
+                       border-radius: 6px; text-decoration: none; display: inline-block; 
+                       font-weight: bold; margin: 10px 5px; }}
+                .btn:hover {{ background: #1557b0; }}
+                ol {{ padding-left: 20px; }}
+                li {{ margin: 10px 0; line-height: 1.5; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="logo">🛛</div>
+                <h1>Slack App Setup Required</h1>
+                <p style="text-align: center; color: #666; font-size: 18px; margin-bottom: 30px;">
+                    The universal Slack app is ready, but needs Slack credentials to complete OAuth installation.
+                </p>
+                
+                <div class="setup-box">
+                    <h2>📋 Quick Setup (5 minutes):</h2>
+                    <ol>
+                        <li><strong>Create Slack App:</strong> <a href="https://api.slack.com/apps" target="_blank">https://api.slack.com/apps</a></li>
+                        <li><strong>App Name:</strong> <code>Reddit Scraper Pro</code></li>
+                        <li><strong>OAuth Redirect:</strong> <code>{request.host_url}slack/oauth/callback</code></li>
+                        <li><strong>Slash Command:</strong> <code>/reddit</code> → <code>{request.host_url}api/slack/command</code></li>
+                        <li><strong>Set Environment Variables:</strong>
+                            <br><code>vercel env add SLACK_CLIENT_ID production</code>
+                            <br><code>vercel env add SLACK_CLIENT_SECRET production</code>
+                        </li>
+                        <li><strong>Redeploy:</strong> <code>vercel --prod</code></li>
+                    </ol>
+                </div>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="https://api.slack.com/apps" target="_blank" class="btn">Create Slack App</a>
+                    <a href="/" class="btn" style="background: #6c757d;">Back to Home</a>
+                </div>
+                
+                <div style="background: #e3f2fd; padding: 20px; border-radius: 8px; text-align: center;">
+                    <h3 style="color: #1565c0; margin-bottom: 10px;">🚀 After Setup</h3>
+                    <p style="color: #666; margin: 0;">
+                        Customers will be able to install your app with one click and use 
+                        <code>/reddit search AI startups</code> commands directly in Slack!
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        '''
+    
     scope = 'commands,chat:write,bot,users:read,channels:read,groups:read'
     redirect_uri = f"{request.host_url}slack/oauth/callback"
     
