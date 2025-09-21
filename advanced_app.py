@@ -28,10 +28,14 @@ app = Flask(__name__)
 
 # ============ MULTI-TENANT SLACK SYSTEM ============
 
-# Database setup
-DB_PATH = 'slack_workspaces.db'
-ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', Fernet.generate_key().decode())
-fernet = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
+# Database setup - use /tmp for serverless environments  
+if os.getenv('VERCEL'):
+    DB_PATH = '/tmp/slack_workspaces.db'
+else:
+    DB_PATH = 'slack_workspaces.db'
+# Encryption setup
+SECRET_KEY = os.getenv('SECRET_KEY', 'default-secret-key-change-in-production')
+fernet = Fernet(base64.urlsafe_b64encode(SECRET_KEY[:32].ljust(32, '0').encode()))
 
 def init_database():
     """Initialize the multi-tenant Slack database"""
