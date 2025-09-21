@@ -395,6 +395,59 @@ def slack_oauth_callback():
 
 # ============ WORKSPACE MANAGEMENT DASHBOARD ============
 
+def generate_workspace_list_html(workspace_data):
+    """Generate HTML for workspace list"""
+    html_parts = []
+    for ws in workspace_data:
+        status_class = "status-active" if ws['is_active'] else "status-inactive"
+        status_text = "✅ Active" if ws['is_active'] else "❌ Inactive"
+        btn_class = "btn-danger" if ws['is_active'] else "btn-primary"
+        btn_text = "Deactivate" if ws['is_active'] else "Activate"
+        btn_onclick = f"updateWorkspaceStatus('{ws['team_id']}', {str(not ws['is_active']).lower()})"
+        
+        usage_pct = (ws['usage_count']/ws['usage_limit']*100) if ws['usage_limit'] > 0 else 0
+        usage_width = min(100, usage_pct)
+        
+        html_parts.append(f'''
+        <div class="workspace">
+            <div class="workspace-header">
+                <div>
+                    <div class="workspace-name">
+                        {ws['team_name']} 
+                        <span class="{status_class}">
+                            {status_text}
+                        </span>
+                    </div>
+                    <div class="workspace-id">{ws['team_id']}</div>
+                </div>
+                <div class="plan">{ws['plan_type'].upper()}</div>
+            </div>
+            
+            <div class="workspace-stats">
+                <div><strong>Usage:</strong> {ws['usage_count']}/{ws['usage_limit']} ({usage_pct:.1f}%)</div>
+                <div><strong>Installed:</strong> {ws['installed_at'][:10]}</div>
+                <div><strong>Last Active:</strong> {ws['last_active'][:10] if ws['last_active'] else 'Never'}</div>
+                <div><strong>Total Commands:</strong> {ws['total_usage_logs']}</div>
+                <div><strong>Scope:</strong> {ws['scope']}</div>
+            </div>
+            
+            <div class="usage-bar">
+                <div class="usage-fill" style="width: {usage_width}%"></div>
+            </div>
+            
+            <div class="admin-actions">
+                <button class="btn {btn_class}" onclick="{btn_onclick}">
+                    {btn_text}
+                </button>
+                <button class="btn btn-warning" onclick="resetUsage('{ws['team_id']}')">Reset Usage</button>
+                <button class="btn btn-primary" 
+                        onclick="window.open('/admin/workspace/{ws['team_id']}/logs', '_blank')">View Logs</button>
+            </div>
+        </div>
+        ''')
+    
+    return ''.join(html_parts)
+
 @app.route('/admin/workspaces')
 def workspace_dashboard():
     """Admin dashboard for managing connected workspaces"""
@@ -546,47 +599,7 @@ def workspace_dashboard():
             </div>
             
             <div class="workspace-list">
-                {''.join([
-                    f'''
-                    <div class="workspace">
-                        <div class="workspace-header">
-                            <div>
-                                <div class="workspace-name">
-                                    {ws['team_name']} 
-                                    <span class="{'status-active' if ws['is_active'] else 'status-inactive'}">
-                                        {'✅ Active' if ws['is_active'] else '❌ Inactive'}
-                                    </span>
-                                </div>
-                                <div class="workspace-id">{ws['team_id']}</div>
-                            </div>
-                            <div class="plan">{ws['plan_type'].upper()}</div>
-                        </div>
-                        
-                        <div class="workspace-stats">
-                            <div><strong>Usage:</strong> {ws['usage_count']}/{ws['usage_limit']} ({ws['usage_count']/ws['usage_limit']*100:.1f}%)</div>
-                            <div><strong>Installed:</strong> {ws['installed_at'][:10]}</div>
-                            <div><strong>Last Active:</strong> {ws['last_active'][:10] if ws['last_active'] else 'Never'}</div>
-                            <div><strong>Total Commands:</strong> {ws['total_usage_logs']}</div>
-                            <div><strong>Scope:</strong> {ws['scope']}</div>
-                        </div>
-                        
-                        <div class="usage-bar">
-                            <div class="usage-fill" style="width: {min(100, (ws['usage_count'] / ws['usage_limit']) * 100)}%"></div>
-                        </div>
-                        
-                        <div class="admin-actions">
-                            <button class="btn {'btn-danger' if ws['is_active'] else 'btn-primary'}" 
-                                    onclick="updateWorkspaceStatus('{ws['team_id']}', {str(not ws['is_active']).lower()})">
-                                {'Deactivate' if ws['is_active'] else 'Activate'}
-                            </button>
-                            <button class="btn btn-warning" onclick="resetUsage('{ws['team_id']}')">Reset Usage</button>
-                            <button class="btn btn-primary" 
-                                    onclick="window.open('/admin/workspace/{ws['team_id']}/logs', '_blank')">View Logs</button>
-                        </div>
-                    </div>
-                    '''
-                    for ws in workspace_data
-                ])}
+                {generate_workspace_list_html(workspace_data)}
             </div>
             
             <p style="text-align: center; color: #666; margin-top: 30px;">
@@ -743,6 +756,40 @@ def pricing_page():
     </html>
     '''
 
+def generate_revenue_html(revenue_data):
+    """Generate HTML for revenue data"""
+    html_parts = []
+    for data in revenue_data:
+        html_parts.append(f'''
+        <div class="plan-row">
+            <div>
+                <strong>{data['plan']}</strong><br>
+                <small>{data['workspaces']} workspaces • {data['total_usage']:,} searches</small>
+            </div>
+            <div style="text-align: right;">
+                <strong>${data['monthly_revenue']:,}/month</strong><br>
+                <small>${data['price']}/workspace</small>
+            </div>
+        </div>
+        ''')
+    return ''.join(html_parts)
+
+def generate_users_table_html(top_users):
+    """Generate HTML for users table"""
+    html_parts = []
+    for user in top_users:
+        utilization = (user[2]/user[3]*100) if user[3] > 0 else 0
+        html_parts.append(f'''
+        <tr>
+            <td>{user[0]}</td>
+            <td>{user[1].title()}</td>
+            <td>{user[2]:,}</td>
+            <td>{user[3]:,}</td>
+            <td>{utilization:.1f}%</td>
+        </tr>
+        ''')
+    return ''.join(html_parts)
+
 @app.route('/admin/billing')
 def billing_dashboard():
     """Admin billing and revenue dashboard"""
@@ -838,21 +885,7 @@ def billing_dashboard():
             
             <div class="section">
                 <h3>Revenue by Plan</h3>
-                {"\n".join([
-                    f'''
-                    <div class="plan-row">
-                        <div>
-                            <strong>{data['plan']}</strong><br>
-                            <small>{data['workspaces']} workspaces • {data['total_usage']:,} searches</small>
-                        </div>
-                        <div style="text-align: right;">
-                            <strong>${data['monthly_revenue']:,}/month</strong><br>
-                            <small>${data['price']}/workspace</small>
-                        </div>
-                    </div>
-                    '''
-                    for data in revenue_data
-                ])}
+                {generate_revenue_html(revenue_data)}
             </div>
             
             <div class="section">
@@ -868,18 +901,7 @@ def billing_dashboard():
                         </tr>
                     </thead>
                     <tbody>
-                        {"\n".join([
-                            f'''
-                            <tr>
-                                <td>{user[0]}</td>
-                                <td>{user[1].title()}</td>
-                                <td>{user[2]:,}</td>
-                                <td>{user[3]:,}</td>
-                                <td>{(user[2]/user[3]*100):.1f}%</td>
-                            </tr>
-                            '''
-                            for user in top_users
-                        ])}
+                        {generate_users_table_html(top_users)}
                     </tbody>
                 </table>
             </div>
@@ -945,6 +967,20 @@ def reset_workspace_usage(team_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+def generate_logs_html(logs):
+    """Generate HTML for workspace logs"""
+    html_parts = []
+    for log in logs:
+        html_parts.append(f'''
+        <div class="log">
+            <div class="log-time">{log[3]}</div>
+            <div class="log-user">User: {log[1]} ({log[-1] or "Unknown"})</div>
+            <div class="log-query">Query: {log[4] or "N/A"}</div>
+            <div>Results: {log[5] or 0} posts</div>
+        </div>
+        ''')
+    return ''.join(html_parts)
+
 @app.route('/admin/workspace/<team_id>/logs')
 def workspace_logs(team_id):
     """View detailed logs for a specific workspace"""
@@ -997,17 +1033,7 @@ def workspace_logs(team_id):
             <p><strong>Total Logs:</strong> {len(logs)}</p>
         </div>
         
-        {"\n".join([
-            f'''
-            <div class="log">
-                <div class="log-time">{log[3]}</div>
-                <div class="log-user">User: {log[1]} ({log[-1] or "Unknown"})</div>
-                <div class="log-query">Query: {log[4] or "N/A"}</div>
-                <div>Results: {log[5] or 0} posts</div>
-            </div>
-            '''
-            for log in logs
-        ])}
+        {generate_logs_html(logs)}
         
         <p style="text-align: center; color: #666; margin-top: 50px;">
             Showing last 100 usage logs
