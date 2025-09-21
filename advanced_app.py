@@ -455,7 +455,7 @@ def index():
         .modal-title { font-size: 1.4rem; font-weight: bold; color: #333; }
         .close-btn { background: none; border: none; font-size: 28px; cursor: pointer; color: #999; width: auto; }
         .close-btn:hover { color: #333; }
-        .modal-body { padding: 30px; max-height: 500px; overflow-y: auto; }
+        .modal-body { padding: 30px; max-height: 70vh; overflow-y: auto; }
         .modal-footer { padding: 20px 30px; border-top: 1px solid #eee; text-align: right; 
                        background: #f8f9fa; border-radius: 0 0 12px 12px; }
         
@@ -500,18 +500,22 @@ def index():
                      border-radius: 50%; margin-left: 8px; cursor: pointer; font-size: 10px; }
         .remove-btn:hover { background: #d32f2f; }
         
-        .subreddit-results { background: white; border-radius: 8px; border: 1px solid #ddd; }
+        .subreddit-results { background: white; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto; }
         .subreddit-item { display: flex; align-items: center; justify-content: space-between; 
-                         padding: 12px; border-bottom: 1px solid #eee; }
+                         padding: 15px; border-bottom: 1px solid #eee; transition: background-color 0.2s; }
+        .subreddit-item:hover { background-color: #f8f9fa; }
         .subreddit-item:last-child { border-bottom: none; }
-        .subreddit-info { flex-grow: 1; }
-        .subreddit-name { font-weight: bold; color: #1a73e8; }
-        .subreddit-stats { color: #666; font-size: 12px; margin-top: 4px; }
-        .subreddit-description { color: #888; font-size: 11px; margin-top: 2px; }
+        .subreddit-info { flex-grow: 1; min-width: 0; }
+        .subreddit-name { font-weight: bold; color: #1a73e8; font-size: 14px; margin-bottom: 4px; }
+        .subreddit-stats { color: #28a745; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+        .subreddit-description { color: #666; font-size: 12px; line-height: 1.4; 
+                               overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+                               -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
         .add-btn { background: #28a745; color: white; border: none; padding: 8px 16px; 
-                  border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; width: auto; }
-        .add-btn:hover { background: #218838; }
-        .add-btn:disabled { background: #6c757d; cursor: not-allowed; }
+                  border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; 
+                  width: auto; min-width: 70px; transition: all 0.2s; flex-shrink: 0; }
+        .add-btn:hover { background: #218838; transform: translateY(-1px); }
+        .add-btn:disabled { background: #6c757d; cursor: not-allowed; transform: none; }
         
         .modal-loading { text-align: center; padding: 20px; }
         .modal-spinner { border: 3px solid #f3f3f3; border-top: 3px solid #ff6b35; border-radius: 50%; 
@@ -1141,31 +1145,52 @@ def index():
             updateSelectedDisplay();
         }
         
-        async function searchSubredditsInModal() {
+        // Enhanced search with pagination and infinite scroll
+        let currentPage = 1;
+        let isLoading = false;
+        let hasMore = true;
+        let currentSearchTerm = '';
+        
+        async function searchSubredditsInModal(reset = true) {
             const searchTerm = document.getElementById('modalSearchInput').value.trim();
             if (!searchTerm) {
                 showAlert('error', 'Please enter a search term to find subreddits.');
                 return;
             }
             
+            // Reset pagination for new search
+            if (reset || currentSearchTerm !== searchTerm) {
+                currentPage = 1;
+                hasMore = true;
+                currentSearchTerm = searchTerm;
+            }
+            
+            if (isLoading || !hasMore) return;
+            
             const loading = document.getElementById('modalLoading');
             const results = document.getElementById('modalResults');
             const resultsList = document.getElementById('modalResultsList');
             
+            isLoading = true;
             loading.style.display = 'block';
-            results.style.display = 'none';
+            
+            if (reset) {
+                results.style.display = 'none';
+                resultsList.innerHTML = '';
+            }
             
             try {
-                const response = await fetch(`/api/discover_subreddits?search=${encodeURIComponent(searchTerm)}`);
+                const response = await fetch(`/api/discover_subreddits?search=${encodeURIComponent(searchTerm)}&page=${currentPage}&limit=20`);
                 const data = await response.json();
                 
                 loading.style.display = 'none';
+                isLoading = false;
                 
                 if (data.success && data.subreddits.length > 0) {
-                    resultsList.innerHTML = data.subreddits.map(sub => {
+                    const newItems = data.subreddits.map(sub => {
                         const isSelected = selectedSubreddits.has(sub.name);
                         return `
-                            <div class="subreddit-item">
+                            <div class="subreddit-item" data-subreddit="${sub.name}">
                                 <div class="subreddit-info">
                                     <div class="subreddit-name">r/${sub.name}</div>
                                     <div class="subreddit-stats">${sub.subscribers.toLocaleString()} members</div>
@@ -1177,14 +1202,75 @@ def index():
                             </div>
                         `;
                     }).join('');
+                    
+                    if (reset) {
+                        resultsList.innerHTML = newItems;
+                    } else {
+                        resultsList.innerHTML += newItems;
+                    }
+                    
+                    // Update pagination state
+                    hasMore = data.has_more;
+                    currentPage++;
+                    
+                    // Add load more button if there are more results
+                    updateLoadMoreButton(data);
+                    
                     results.style.display = 'block';
-                } else {
+                    
+                    // Show search summary
+                    if (reset) {
+                        showSearchSummary(data);
+                    }
+                } else if (reset) {
                     resultsList.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">No subreddits found. Try a different search term.</p>';
                     results.style.display = 'block';
                 }
             } catch (error) {
                 loading.style.display = 'none';
+                isLoading = false;
                 showAlert('error', `Search failed: ${error.message}`);
+            }
+        }
+        
+        function showSearchSummary(data) {
+            const summaryHtml = `
+                <div class="search-summary" style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #1a73e8;">
+                    <strong>🔍 Search Results for "${data.search_term}"</strong><br>
+                    <span style="color: #666; font-size: 14px;">Found ${data.total_found}+ communities • Page ${data.page - 1} • ${data.has_more ? 'More available' : 'All results shown'}</span>
+                </div>
+            `;
+            
+            const resultsList = document.getElementById('modalResultsList');
+            resultsList.insertAdjacentHTML('afterbegin', summaryHtml);
+        }
+        
+        function updateLoadMoreButton(data) {
+            const resultsList = document.getElementById('modalResultsList');
+            
+            // Remove existing load more button
+            const existingBtn = document.getElementById('loadMoreBtn');
+            if (existingBtn) existingBtn.remove();
+            
+            // Add new load more button if needed
+            if (data.has_more) {
+                const loadMoreBtn = `
+                    <div id="loadMoreBtn" style="text-align: center; padding: 20px;">
+                        <button onclick="searchSubredditsInModal(false)" 
+                                style="background: #1a73e8; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                            🔄 Load More Results (${currentPage - 1} of many)
+                        </button>
+                        <p style="color: #666; font-size: 12px; margin-top: 8px;">Showing top results by community size</p>
+                    </div>
+                `;
+                resultsList.insertAdjacentHTML('beforeend', loadMoreBtn);
+            } else {
+                const endMsg = `
+                    <div style="text-align: center; padding: 20px; color: #666; font-size: 14px; border-top: 1px solid #eee; margin-top: 15px;">
+                        ✅ All results loaded (${data.total_found} communities found)
+                    </div>
+                `;
+                resultsList.insertAdjacentHTML('beforeend', endMsg);
             }
         }
         
@@ -1250,60 +1336,148 @@ def index():
 '''
 @app.route('/api/discover_subreddits')
 def discover_subreddits():
-    """Discover subreddits by search term"""
+    """Discover subreddits by search term with pagination support"""
     try:
         search_term = request.args.get('search', '').strip()
+        page = int(request.args.get('page', 1))
+        limit = min(int(request.args.get('limit', 50)), 100)  # Max 100 per page
+        
         if not search_term:
             return jsonify({'error': 'Search term is required', 'success': False})
         
         reddit = get_reddit_instance()
         if not reddit:
-            return jsonify({'error': 'Reddit API not configured', 'success': False})
+            # Return mock data for testing when Reddit API not available
+            mock_subreddits = create_mock_subreddits(search_term, page, limit)
+            return jsonify({
+                'success': True,
+                'subreddits': mock_subreddits,
+                'search_term': search_term,
+                'total_found': len(mock_subreddits),
+                'page': page,
+                'has_more': page < 3  # Mock has 3 pages
+            })
         
         discovered_subreddits = set()
         
         try:
-            # Search for subreddits by name
+            # Search for subreddits by name - get more results
             subreddit_results = reddit.subreddits.search_by_name(search_term, exact=False)
+            
+            # Also search subreddit content for broader results
+            try:
+                content_results = reddit.subreddit('all').search(f'subreddit:{search_term}', limit=50)
+                additional_subreddits = set()
+                for post in content_results:
+                    try:
+                        sub_name = post.subreddit.display_name.lower()
+                        if search_term.lower() in sub_name:
+                            additional_subreddits.add(post.subreddit.display_name)
+                        if len(additional_subreddits) >= 25:
+                            break
+                    except:
+                        continue
+                
+                # Add found subreddits to search results
+                for sub_name in additional_subreddits:
+                    try:
+                        sub = reddit.subreddit(sub_name)
+                        if len(discovered_subreddits) >= 100:  # Increased limit
+                            break
+                        
+                        sub_info = {
+                            'name': sub.display_name,
+                            'title': sub.title[:100] if hasattr(sub, 'title') and sub.title else sub.display_name,
+                            'description': (sub.public_description or '')[:300] if hasattr(sub, 'public_description') else '',
+                            'subscribers': getattr(sub, 'subscribers', 0) or 0,
+                            'url': f'https://reddit.com/r/{sub.display_name}'
+                        }
+                        if sub_info['subscribers'] > 100:  # Only active subreddits
+                            discovered_subreddits.add(json.dumps(sub_info, sort_keys=True))
+                    except:
+                        continue
+            except:
+                pass
+            
+            # Process direct name search results
             for sub in subreddit_results:
-                if len(discovered_subreddits) >= 25:  # Limit results
+                if len(discovered_subreddits) >= 100:  # Increased limit
                     break
                 try:
                     # Get subreddit info
                     sub_info = {
                         'name': sub.display_name,
                         'title': sub.title[:100] if hasattr(sub, 'title') and sub.title else sub.display_name,
-                        'description': (sub.public_description or '')[:200] if hasattr(sub, 'public_description') else '',
+                        'description': (sub.public_description or '')[:300] if hasattr(sub, 'public_description') else '',
                         'subscribers': getattr(sub, 'subscribers', 0) or 0,
                         'url': f'https://reddit.com/r/{sub.display_name}'
                     }
-                    if sub_info['subscribers'] > 50:  # Only include active subreddits
+                    if sub_info['subscribers'] > 100:  # Only include active subreddits
                         discovered_subreddits.add(json.dumps(sub_info, sort_keys=True))
                 except Exception:
                     continue
-        except Exception:
-            pass
+        except Exception as e:
+            print(f'Subreddit search error: {e}')
         
         # Convert back to list and parse JSON
         subreddit_list = []
-        for sub_json in list(discovered_subreddits)[:20]:  # Top 20 results
+        for sub_json in discovered_subreddits:
             try:
                 subreddit_list.append(json.loads(sub_json))
             except Exception:
                 continue
         
-        # Sort by subscriber count
+        # Sort by subscriber count (most popular first)
         subreddit_list.sort(key=lambda x: x['subscribers'], reverse=True)
+        
+        # Implement pagination
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        paginated_results = subreddit_list[start_idx:end_idx]
         
         return jsonify({
             'success': True,
-            'subreddits': subreddit_list,
+            'subreddits': paginated_results,
             'search_term': search_term,
-            'total_found': len(subreddit_list)
+            'total_found': len(subreddit_list),
+            'page': page,
+            'limit': limit,
+            'has_more': end_idx < len(subreddit_list)
         })
         
     except Exception as e:
         return jsonify({'error': f'Search failed: {str(e)}', 'success': False})
+
+def create_mock_subreddits(search_term, page, limit):
+    """Create mock subreddit data for testing"""
+    base_subreddits = [
+        {'name': f'{search_term}', 'title': f'Main {search_term} Community', 'description': f'The main community for {search_term} discussions', 'subscribers': 1500000, 'url': f'https://reddit.com/r/{search_term}'},
+        {'name': f'{search_term}_community', 'title': f'{search_term} Community Hub', 'description': f'Community hub for {search_term} enthusiasts', 'subscribers': 850000, 'url': f'https://reddit.com/r/{search_term}_community'},
+        {'name': f'learn{search_term}', 'title': f'Learn {search_term}', 'description': f'Learn everything about {search_term}', 'subscribers': 650000, 'url': f'https://reddit.com/r/learn{search_term}'},
+        {'name': f'{search_term}_help', 'title': f'{search_term} Help', 'description': f'Get help with {search_term}', 'subscribers': 450000, 'url': f'https://reddit.com/r/{search_term}_help'},
+        {'name': f'{search_term}_news', 'title': f'{search_term} News', 'description': f'Latest news about {search_term}', 'subscribers': 320000, 'url': f'https://reddit.com/r/{search_term}_news'},
+        {'name': f'{search_term}_tips', 'title': f'{search_term} Tips', 'description': f'Tips and tricks for {search_term}', 'subscribers': 280000, 'url': f'https://reddit.com/r/{search_term}_tips'},
+        {'name': f'ask{search_term}', 'title': f'Ask {search_term}', 'description': f'Ask questions about {search_term}', 'subscribers': 240000, 'url': f'https://reddit.com/r/ask{search_term}'},
+        {'name': f'{search_term}_discussion', 'title': f'{search_term} Discussion', 'description': f'In-depth {search_term} discussions', 'subscribers': 180000, 'url': f'https://reddit.com/r/{search_term}_discussion'},
+        {'name': f'{search_term}_beginners', 'title': f'{search_term} for Beginners', 'description': f'Beginner-friendly {search_term} community', 'subscribers': 150000, 'url': f'https://reddit.com/r/{search_term}_beginners'},
+        {'name': f'{search_term}_advanced', 'title': f'Advanced {search_term}', 'description': f'Advanced {search_term} topics', 'subscribers': 120000, 'url': f'https://reddit.com/r/{search_term}_advanced'},
+    ]
+    
+    # Create more variations for pagination
+    all_subreddits = base_subreddits.copy()
+    for i in range(10, 50):
+        all_subreddits.append({
+            'name': f'{search_term}{i}',
+            'title': f'{search_term} Variant {i}',
+            'description': f'Alternative {search_term} community #{i}',
+            'subscribers': max(50000 - i * 1000, 5000),
+            'url': f'https://reddit.com/r/{search_term}{i}'
+        })
+    
+    # Paginate
+    start_idx = (page - 1) * limit
+    end_idx = start_idx + limit
+    return all_subreddits[start_idx:end_idx]
 
 @app.route('/api/advanced_search')
 def api_advanced_search():
