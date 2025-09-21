@@ -229,7 +229,7 @@ init_database()
 def slack_install():
     """Start Slack OAuth installation process"""
     # Slack OAuth parameters
-    client_id = os.getenv('SLACK_CLIENT_ID', 'your_client_id_here')
+    client_id = os.getenv('SLACK_CLIENT_ID', '9539468816311.9568232669073')
     
     # Check if Slack app is properly configured
     if client_id == 'your_client_id_here' or not client_id or 'client_id' in client_id.lower():
@@ -398,8 +398,8 @@ def slack_oauth_callback():
         return 'Missing authorization code', 400
     
     # Exchange code for access token
-    client_id = os.getenv('SLACK_CLIENT_ID', 'your_client_id_here')
-    client_secret = os.getenv('SLACK_CLIENT_SECRET', 'your_client_secret_here')
+    client_id = os.getenv('SLACK_CLIENT_ID', '9539468816311.9568232669073')
+    client_secret = os.getenv('SLACK_CLIENT_SECRET', 'e44cc5443fb3899463257bd9d40504d6')
     redirect_uri = f"{request.host_url}slack/oauth/callback"
     
     try:
