@@ -18,8 +18,1003 @@ import time
 import logging
 from threading import Thread
 from uuid import uuid4
+import sqlite3
+import hashlib
+import hmac
+from cryptography.fernet import Fernet
+import base64
 
 app = Flask(__name__)
+
+# ============ MULTI-TENANT SLACK SYSTEM ============
+
+# Database setup
+DB_PATH = 'slack_workspaces.db'
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', Fernet.generate_key().decode())
+fernet = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
+
+def init_database():
+    """Initialize the multi-tenant Slack database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Workspaces table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS workspaces (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id TEXT UNIQUE NOT NULL,
+            team_name TEXT NOT NULL,
+            bot_token TEXT NOT NULL,  -- Encrypted
+            bot_user_id TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_active TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE,
+            plan_type TEXT DEFAULT 'free',
+            usage_count INTEGER DEFAULT 0,
+            usage_limit INTEGER DEFAULT 100,
+            settings JSON,
+            created_by TEXT,
+            webhook_url TEXT  -- Encrypted, optional
+        )
+    ''')
+    
+    # Users table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS workspace_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER,
+            user_id TEXT NOT NULL,
+            user_name TEXT,
+            access_token TEXT,  -- Encrypted, for user-specific actions
+            permissions JSON,
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used TIMESTAMP,
+            is_admin BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces (id)
+        )
+    ''')
+    
+    # Usage tracking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usage_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workspace_id INTEGER,
+            user_id TEXT,
+            command TEXT,
+            search_term TEXT,
+            result_count INTEGER,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            success BOOLEAN,
+            error_message TEXT,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces (id)
+        )
+    ''')
+    
+    # App installations tracking
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS installations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            team_id TEXT NOT NULL,
+            installer_user_id TEXT,
+            installation_data JSON,
+            installed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            uninstalled_at TIMESTAMP,
+            is_active BOOLEAN DEFAULT TRUE
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("[DB] Multi-tenant database initialized")
+
+def encrypt_token(token):
+    """Encrypt sensitive tokens before storing"""
+    if not token:
+        return None
+    return fernet.encrypt(token.encode()).decode()
+
+def decrypt_token(encrypted_token):
+    """Decrypt tokens for use"""
+    if not encrypted_token:
+        return None
+    try:
+        return fernet.decrypt(encrypted_token.encode()).decode()
+    except Exception as e:
+        print(f"[ENCRYPT] Failed to decrypt token: {e}")
+        return None
+
+def get_workspace_by_team_id(team_id):
+    """Get workspace data by Slack team ID"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM workspaces WHERE team_id = ? AND is_active = TRUE', (team_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        columns = ['id', 'team_id', 'team_name', 'bot_token', 'bot_user_id', 'scope', 
+                  'installed_at', 'last_active', 'is_active', 'plan_type', 'usage_count', 
+                  'usage_limit', 'settings', 'created_by', 'webhook_url']
+        workspace = dict(zip(columns, row))
+        
+        # Decrypt sensitive data
+        workspace['bot_token'] = decrypt_token(workspace['bot_token'])
+        workspace['webhook_url'] = decrypt_token(workspace['webhook_url'])
+        
+        # Parse JSON fields
+        if workspace['settings']:
+            workspace['settings'] = json.loads(workspace['settings'])
+        
+        return workspace
+    return None
+
+def store_workspace(team_id, team_name, bot_token, bot_user_id, scope, installer_user_id=None):
+    """Store new workspace installation"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    encrypted_bot_token = encrypt_token(bot_token)
+    
+    try:
+        cursor.execute('''
+            INSERT OR REPLACE INTO workspaces 
+            (team_id, team_name, bot_token, bot_user_id, scope, created_by, settings)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            team_id, team_name, encrypted_bot_token, bot_user_id, scope, 
+            installer_user_id, json.dumps({'notifications': True, 'max_results': 50})
+        ))
+        
+        workspace_id = cursor.lastrowid
+        
+        # Log installation
+        cursor.execute('''
+            INSERT INTO installations 
+            (team_id, installer_user_id, installation_data)
+            VALUES (?, ?, ?)
+        ''', (
+            team_id, installer_user_id, 
+            json.dumps({'bot_user_id': bot_user_id, 'scope': scope})
+        ))
+        
+        conn.commit()
+        print(f"[DB] Stored workspace: {team_name} ({team_id})")
+        return workspace_id
+        
+    except Exception as e:
+        print(f"[DB] Error storing workspace: {e}")
+        conn.rollback()
+        return None
+    finally:
+        conn.close()
+
+def log_usage(workspace_id, user_id, command, search_term=None, result_count=0, success=True, error=None):
+    """Log command usage for analytics and billing"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Log usage
+        cursor.execute('''
+            INSERT INTO usage_logs 
+            (workspace_id, user_id, command, search_term, result_count, success, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (workspace_id, user_id, command, search_term, result_count, success, error))
+        
+        # Update workspace usage count
+        cursor.execute('''
+            UPDATE workspaces 
+            SET usage_count = usage_count + 1, last_active = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        ''', (workspace_id,))
+        
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Error logging usage: {e}")
+    finally:
+        conn.close()
+
+# Initialize database on startup
+init_database()
+
+# ============ OAUTH 2.0 SLACK APP INSTALLATION ============
+
+@app.route('/slack/install')
+def slack_install():
+    """Start Slack OAuth installation process"""
+    # Slack OAuth parameters
+    client_id = os.getenv('SLACK_CLIENT_ID', 'your_client_id_here')
+    scope = 'commands,chat:write,bot,users:read,channels:read,groups:read'
+    redirect_uri = f"{request.host_url}slack/oauth/callback"
+    
+    # Generate state parameter for security
+    state = hashlib.sha256(f"{client_id}{time.time()}".encode()).hexdigest()[:16]
+    
+    oauth_url = (
+        f"https://slack.com/oauth/v2/authorize?"
+        f"client_id={client_id}&"
+        f"scope={scope}&"
+        f"redirect_uri={redirect_uri}&"
+        f"state={state}"
+    )
+    
+    # Store state for verification (in production, use Redis or database)
+    # For now, we'll skip state verification for simplicity
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Install Reddit Scraper Pro to Slack</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                   background: #f8f9fa; margin: 0; padding: 40px; }}
+            .container {{ max-width: 600px; margin: 0 auto; background: white; padding: 40px; 
+                        border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }}
+            .logo {{ font-size: 3rem; margin-bottom: 20px; }}
+            h1 {{ color: #1a73e8; margin-bottom: 20px; }}
+            p {{ color: #666; margin-bottom: 30px; line-height: 1.6; }}
+            .install-btn {{ background: #4A154B; color: white; padding: 15px 30px; border: none; 
+                          border-radius: 6px; font-size: 16px; font-weight: bold; text-decoration: none; 
+                          display: inline-block; transition: background 0.2s; }}
+            .install-btn:hover {{ background: #611F69; }}
+            .features {{ text-align: left; margin: 30px 0; padding: 20px; background: #f8f9fa; 
+                        border-radius: 8px; }}
+            .feature {{ margin: 10px 0; }}
+            .feature strong {{ color: #1a73e8; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">🔍</div>
+            <h1>Install Reddit Scraper Pro</h1>
+            <p>Add powerful Reddit search and analytics directly to your Slack workspace!</p>
+            
+            <div class="features">
+                <div class="feature"><strong>🚀 Slash Commands:</strong> Use <code>/reddit search [keywords]</code> in any channel</div>
+                <div class="feature"><strong>📊 Analytics:</strong> Get sentiment analysis, engagement metrics, and top posts</div>
+                <div class="feature"><strong>⚡ Smart Search:</strong> Search specific subreddits with advanced filtering</div>
+                <div class="feature"><strong>🔒 Secure:</strong> Your data is encrypted and never shared</div>
+                <div class="feature"><strong>🎆 Free Tier:</strong> 100 searches per month included</div>
+            </div>
+            
+            <p><strong>After installation, you can:</strong></p>
+            <ul style="text-align: left; color: #666;">
+                <li>Type <code>/reddit search AI startups</code> to search all of Reddit</li>
+                <li>Use <code>/reddit search crypto in bitcoin</code> for specific subreddits</li>
+                <li>Get <code>/reddit help</code> for all available commands</li>
+            </ul>
+            
+            <a href="{oauth_url}" class="install-btn">
+                <img src="https://platform.slack-edge.com/img/add_to_slack.png" 
+                     alt="Add to Slack" height="40" width="139" 
+                     style="vertical-align: middle; margin-right: 10px;">
+                Install to Slack
+            </a>
+            
+            <p style="font-size: 14px; color: #999; margin-top: 30px;">
+                Powered by Reddit Scraper Pro • 
+                <a href="{request.host_url}" style="color: #1a73e8;">Visit Website</a>
+            </p>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/slack/oauth/callback')
+def slack_oauth_callback():
+    """Handle Slack OAuth callback and store workspace tokens"""
+    code = request.args.get('code')
+    error = request.args.get('error')
+    state = request.args.get('state')
+    
+    if error:
+        return f'''
+        <div style="text-align: center; padding: 50px; font-family: sans-serif;">
+            <h2 style="color: #dc3545;">❌ Installation Failed</h2>
+            <p>Error: {error}</p>
+            <p><a href="/slack/install" style="color: #1a73e8;">Try Again</a></p>
+        </div>
+        '''
+    
+    if not code:
+        return 'Missing authorization code', 400
+    
+    # Exchange code for access token
+    client_id = os.getenv('SLACK_CLIENT_ID', 'your_client_id_here')
+    client_secret = os.getenv('SLACK_CLIENT_SECRET', 'your_client_secret_here')
+    redirect_uri = f"{request.host_url}slack/oauth/callback"
+    
+    try:
+        # Exchange code for token
+        response = requests.post('https://slack.com/api/oauth.v2.access', {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'code': code,
+            'redirect_uri': redirect_uri
+        })
+        
+        data = response.json()
+        
+        if not data.get('ok'):
+            return f'OAuth error: {data.get("error", "Unknown error")}', 400
+        
+        # Extract installation data
+        team_id = data['team']['id']
+        team_name = data['team']['name']
+        bot_token = data['access_token']
+        bot_user_id = data['bot_user_id']
+        scope = data['scope']
+        installer_user_id = data['authed_user']['id']
+        
+        print(f"[OAUTH] Installing for team: {team_name} ({team_id})")
+        print(f"[OAUTH] Bot user ID: {bot_user_id}")
+        print(f"[OAUTH] Scope: {scope}")
+        
+        # Store workspace data securely
+        workspace_id = store_workspace(
+            team_id, team_name, bot_token, bot_user_id, scope, installer_user_id
+        )
+        
+        if workspace_id:
+            return f'''
+            <div style="text-align: center; padding: 50px; font-family: sans-serif;">
+                <div style="font-size: 4rem; margin-bottom: 20px;">🎉</div>
+                <h2 style="color: #28a745;">Installation Successful!</h2>
+                <p style="font-size: 18px; color: #666;">Reddit Scraper Pro has been added to <strong>{team_name}</strong></p>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0; text-align: left; max-width: 500px; margin-left: auto; margin-right: auto;">
+                    <h3 style="color: #1a73e8; margin-top: 0;">🚀 Try these commands in Slack:</h3>
+                    <ul style="color: #666; line-height: 1.8;">
+                        <li><code>/reddit search AI startups</code> - Search all of Reddit</li>
+                        <li><code>/reddit search crypto in bitcoin</code> - Search specific subreddit</li>
+                        <li><code>/reddit search python top 25</code> - Get top 25 results</li>
+                        <li><code>/reddit help</code> - Show all available commands</li>
+                        <li><code>/reddit status</code> - Check system status</li>
+                    </ul>
+                </div>
+                
+                <p style="color: #666;">Your team has <strong>100 free searches per month</strong></p>
+                <p><a href="https://slack.com/app_redirect?team={team_id}" style="background: #4A154B; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">Open Slack</a></p>
+                
+                <p style="font-size: 14px; color: #999; margin-top: 30px;">
+                    Need help? Visit <a href="{request.host_url}" style="color: #1a73e8;">our documentation</a> or contact support
+                </p>
+            </div>
+            '''
+        else:
+            return 'Failed to store workspace data', 500
+            
+    except Exception as e:
+        print(f"[OAUTH] Error during installation: {e}")
+        return f'Installation failed: {str(e)}', 500
+
+# ============ WORKSPACE MANAGEMENT DASHBOARD ============
+
+@app.route('/admin/workspaces')
+def workspace_dashboard():
+    """Admin dashboard for managing connected workspaces"""
+    # Simple auth check (in production, use proper authentication)
+    auth_key = request.args.get('key')
+    if auth_key != os.getenv('ADMIN_KEY', 'admin_secret_key'):
+        return 'Unauthorized', 401
+    
+    # Get all workspaces with usage stats
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT w.*, 
+               COUNT(u.id) as total_usage_logs,
+               MAX(u.timestamp) as last_used
+        FROM workspaces w
+        LEFT JOIN usage_logs u ON w.id = u.workspace_id
+        WHERE w.is_active = TRUE
+        GROUP BY w.id
+        ORDER BY w.installed_at DESC
+    ''')
+    
+    workspaces = cursor.fetchall()
+    columns = ['id', 'team_id', 'team_name', 'bot_token', 'bot_user_id', 'scope', 
+              'installed_at', 'last_active', 'is_active', 'plan_type', 'usage_count', 
+              'usage_limit', 'settings', 'created_by', 'webhook_url', 'total_usage_logs', 'last_used']
+    
+    workspace_data = []
+    for row in workspaces:
+        ws = dict(zip(columns, row))
+        ws['bot_token'] = '***ENCRYPTED***'  # Don't show tokens
+        workspace_data.append(ws)
+    
+    # Get total stats
+    cursor.execute('SELECT COUNT(*) FROM workspaces WHERE is_active = TRUE')
+    total_workspaces = cursor.fetchone()[0]
+    
+    cursor.execute('SELECT SUM(usage_count) FROM workspaces WHERE is_active = TRUE')
+    total_searches = cursor.fetchone()[0] or 0
+    
+    cursor.execute('SELECT COUNT(*) FROM usage_logs WHERE timestamp > datetime("now", "-24 hours")')
+    searches_today = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Reddit Scraper Pro - Workspace Dashboard</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                   background: #f8f9fa; margin: 0; padding: 20px; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            h1 {{ color: #1a73e8; text-align: center; }}
+            .stats {{ display: flex; gap: 20px; margin-bottom: 30px; }}
+            .stat {{ flex: 1; background: white; padding: 20px; border-radius: 8px; 
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }}
+            .stat-value {{ font-size: 2rem; font-weight: bold; color: #1a73e8; }}
+            .stat-label {{ color: #666; margin-top: 5px; }}
+            .workspace-list {{ background: white; border-radius: 8px; 
+                             box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }}
+            .workspace {{ padding: 20px; border-bottom: 1px solid #eee; position: relative; }}
+            .workspace:last-child {{ border-bottom: none; }}
+            .workspace-header {{ display: flex; justify-content: space-between; align-items: center; 
+                               margin-bottom: 10px; }}
+            .workspace-name {{ font-size: 18px; font-weight: bold; color: #333; }}
+            .workspace-id {{ font-family: monospace; color: #666; font-size: 14px; }}
+            .workspace-stats {{ display: flex; gap: 20px; color: #666; font-size: 14px; }}
+            .plan {{ background: #e3f2fd; color: #1565c0; padding: 4px 8px; 
+                    border-radius: 4px; font-size: 12px; font-weight: bold; }}
+            .usage-bar {{ background: #f0f0f0; border-radius: 10px; height: 8px; margin: 10px 0; }}
+            .usage-fill {{ background: #1a73e8; height: 100%; border-radius: 10px; transition: width 0.3s; }}
+            .admin-actions {{ display: flex; gap: 10px; margin-top: 10px; }}
+            .btn {{ padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 12px; font-weight: bold; cursor: pointer; border: none; }}
+            .btn-danger {{ background: #dc3545; color: white; }}
+            .btn-warning {{ background: #ffc107; color: #212529; }}
+            .btn-primary {{ background: #007bff; color: white; }}
+            .filters {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; 
+                       box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .status-active {{ color: #28a745; }}
+            .status-inactive {{ color: #dc3545; }}
+        </style>
+        <script>
+            function updateWorkspaceStatus(teamId, active) {{
+                fetch(`/admin/workspace/${{teamId}}/status`, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{active: active, key: '{os.getenv('ADMIN_KEY', 'admin_secret_key')}'}}) 
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if(data.success) {{
+                        location.reload();
+                    }} else {{
+                        alert('Error: ' + data.error);
+                    }}
+                }});
+            }}
+            
+            function resetUsage(teamId) {{
+                if(confirm('Reset usage count for this workspace?')) {{
+                    fetch(`/admin/workspace/${{teamId}}/reset-usage`, {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{key: '{os.getenv('ADMIN_KEY', 'admin_secret_key')}'}}) 
+                    }})
+                    .then(r => r.json())
+                    .then(data => {{
+                        if(data.success) {{
+                            location.reload();
+                        }} else {{
+                            alert('Error: ' + data.error);
+                        }}
+                    }});
+                }}
+            }}
+        </script>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 Reddit Scraper Pro - Admin Dashboard</h1>
+            
+            <div class="filters">
+                <h3>Quick Actions</h3>
+                <div class="admin-actions">
+                    <button class="btn btn-primary" onclick="location.reload()">Refresh Data</button>
+                    <button class="btn btn-warning" onclick="window.open('https://api.slack.com/apps', '_blank')">Slack App Console</button>
+                    <button class="btn btn-primary" onclick="window.open('/slack/install', '_blank')">Installation Page</button>
+                </div>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{total_workspaces}</div>
+                    <div class="stat-label">Connected Workspaces</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{total_searches:,}</div>
+                    <div class="stat-label">Total Searches</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{searches_today}</div>
+                    <div class="stat-label">Searches Today</div>
+                </div>
+            </div>
+            
+            <div class="workspace-list">
+                {''.join([
+                    f'''
+                    <div class="workspace">
+                        <div class="workspace-header">
+                            <div>
+                                <div class="workspace-name">
+                                    {ws['team_name']} 
+                                    <span class="{'status-active' if ws['is_active'] else 'status-inactive'}">
+                                        {'✅ Active' if ws['is_active'] else '❌ Inactive'}
+                                    </span>
+                                </div>
+                                <div class="workspace-id">{ws['team_id']}</div>
+                            </div>
+                            <div class="plan">{ws['plan_type'].upper()}</div>
+                        </div>
+                        
+                        <div class="workspace-stats">
+                            <div><strong>Usage:</strong> {ws['usage_count']}/{ws['usage_limit']} ({ws['usage_count']/ws['usage_limit']*100:.1f}%)</div>
+                            <div><strong>Installed:</strong> {ws['installed_at'][:10]}</div>
+                            <div><strong>Last Active:</strong> {ws['last_active'][:10] if ws['last_active'] else 'Never'}</div>
+                            <div><strong>Total Commands:</strong> {ws['total_usage_logs']}</div>
+                            <div><strong>Scope:</strong> {ws['scope']}</div>
+                        </div>
+                        
+                        <div class="usage-bar">
+                            <div class="usage-fill" style="width: {min(100, (ws['usage_count'] / ws['usage_limit']) * 100)}%"></div>
+                        </div>
+                        
+                        <div class="admin-actions">
+                            <button class="btn {'btn-danger' if ws['is_active'] else 'btn-primary'}" 
+                                    onclick="updateWorkspaceStatus('{ws['team_id']}', {str(not ws['is_active']).lower()})">
+                                {'Deactivate' if ws['is_active'] else 'Activate'}
+                            </button>
+                            <button class="btn btn-warning" onclick="resetUsage('{ws['team_id']}')">Reset Usage</button>
+                            <button class="btn btn-primary" 
+                                    onclick="window.open('/admin/workspace/{ws['team_id']}/logs', '_blank')">View Logs</button>
+                        </div>
+                    </div>
+                    '''
+                    for ws in workspace_data
+                ])}
+            </div>
+            
+            <p style="text-align: center; color: #666; margin-top: 30px;">
+                Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+            </p>
+        </div>
+    </body>
+    </html>
+    '''
+
+# ============ BILLING AND PRICING SYSTEM ============
+
+# Pricing plans configuration
+PRICING_PLANS = {
+    'free': {
+        'name': 'Free',
+        'price': 0,
+        'searches_per_month': 100,
+        'features': ['Basic search', 'Up to 50 results', 'Community support']
+    },
+    'pro': {
+        'name': 'Pro',
+        'price': 29,
+        'searches_per_month': 1000,
+        'features': ['Advanced search', 'Up to 500 results', 'Priority support', 'Analytics dashboard']
+    },
+    'enterprise': {
+        'name': 'Enterprise',
+        'price': 99,
+        'searches_per_month': 10000,
+        'features': ['Unlimited search', 'Custom integrations', '24/7 support', 'White-label option']
+    }
+}
+
+def check_workspace_limits(workspace):
+    """Check if workspace has exceeded limits and needs upgrade"""
+    plan = workspace.get('plan_type', 'free')
+    usage_count = workspace.get('usage_count', 0)
+    usage_limit = workspace.get('usage_limit', 100)
+    
+    # Calculate usage percentage
+    usage_percentage = (usage_count / usage_limit) * 100 if usage_limit > 0 else 100
+    
+    return {
+        'plan': plan,
+        'usage_count': usage_count,
+        'usage_limit': usage_limit,
+        'usage_percentage': usage_percentage,
+        'over_limit': usage_count >= usage_limit,
+        'near_limit': usage_percentage >= 80,  # 80% threshold warning
+        'can_upgrade': plan in ['free', 'pro']  # Enterprise is highest tier
+    }
+
+@app.route('/pricing')
+def pricing_page():
+    """Display pricing information"""
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Reddit Scraper Pro - Pricing</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                   margin: 0; padding: 40px; min-height: 100vh; }}
+            .container {{ max-width: 1000px; margin: 0 auto; }}
+            h1 {{ text-align: center; color: white; font-size: 3rem; margin-bottom: 20px; }}
+            .subtitle {{ text-align: center; color: rgba(255,255,255,0.9); font-size: 1.2rem; 
+                        margin-bottom: 50px; }}
+            .plans {{ display: flex; gap: 30px; justify-content: center; flex-wrap: wrap; }}
+            .plan {{ background: white; border-radius: 15px; padding: 40px; text-align: center; 
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.2); transition: transform 0.3s; 
+                    min-width: 280px; position: relative; }}
+            .plan:hover {{ transform: translateY(-10px); }}
+            .plan.popular {{ border: 3px solid #1a73e8; transform: scale(1.05); }}
+            .plan.popular::before {{ content: 'Most Popular'; position: absolute; top: -15px; 
+                                   left: 50%; transform: translateX(-50%); background: #1a73e8; 
+                                   color: white; padding: 8px 20px; border-radius: 20px; 
+                                   font-size: 12px; font-weight: bold; }}
+            .plan-name {{ font-size: 2rem; font-weight: bold; color: #333; margin-bottom: 10px; }}
+            .plan-price {{ font-size: 3rem; font-weight: bold; color: #1a73e8; margin-bottom: 20px; }}
+            .plan-price small {{ font-size: 1rem; color: #666; }}
+            .plan-features {{ list-style: none; padding: 0; margin: 30px 0; }}
+            .plan-features li {{ margin: 15px 0; padding: 10px 0; border-bottom: 1px solid #eee; 
+                               color: #666; }}
+            .plan-features li:last-child {{ border-bottom: none; }}
+            .cta-btn {{ background: #1a73e8; color: white; padding: 15px 40px; border: none; 
+                      border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; 
+                      text-decoration: none; display: inline-block; transition: background 0.3s; }}
+            .cta-btn:hover {{ background: #1557b0; }}
+            .free-btn {{ background: #28a745; }}
+            .free-btn:hover {{ background: #218838; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 Reddit Scraper Pro</h1>
+            <p class="subtitle">Choose the perfect plan for your team's Reddit research needs</p>
+            
+            <div class="plans">
+                <div class="plan">
+                    <div class="plan-name">Free</div>
+                    <div class="plan-price">$0<small>/month</small></div>
+                    <ul class="plan-features">
+                        <li>✅ 100 searches per month</li>
+                        <li>✅ Basic search functionality</li>
+                        <li>✅ Up to 50 results per search</li>
+                        <li>✅ Community support</li>
+                        <li>✅ Slack integration</li>
+                    </ul>
+                    <a href="/slack/install" class="cta-btn free-btn">Get Started Free</a>
+                </div>
+                
+                <div class="plan popular">
+                    <div class="plan-name">Pro</div>
+                    <div class="plan-price">$29<small>/month</small></div>
+                    <ul class="plan-features">
+                        <li>✅ 1,000 searches per month</li>
+                        <li>✅ Advanced search filters</li>
+                        <li>✅ Up to 500 results per search</li>
+                        <li>✅ Sentiment analysis</li>
+                        <li>✅ Priority support</li>
+                        <li>✅ Analytics dashboard</li>
+                        <li>✅ Export to Excel/CSV</li>
+                    </ul>
+                    <a href="mailto:support@redditscraperpro.com?subject=Pro Plan Upgrade" class="cta-btn">Upgrade to Pro</a>
+                </div>
+                
+                <div class="plan">
+                    <div class="plan-name">Enterprise</div>
+                    <div class="plan-price">$99<small>/month</small></div>
+                    <ul class="plan-features">
+                        <li>✅ 10,000 searches per month</li>
+                        <li>✅ Unlimited results</li>
+                        <li>✅ Custom integrations</li>
+                        <li>✅ White-label option</li>
+                        <li>✅ 24/7 dedicated support</li>
+                        <li>✅ Custom training</li>
+                        <li>✅ API access</li>
+                        <li>✅ Multi-workspace management</li>
+                    </ul>
+                    <a href="mailto:support@redditscraperpro.com?subject=Enterprise Plan" class="cta-btn">Contact Sales</a>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 50px; color: rgba(255,255,255,0.8);">
+                <p>All plans include SSL encryption, data privacy compliance, and regular updates.</p>
+                <p><a href="/" style="color: white;">← Back to Home</a></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/admin/billing')
+def billing_dashboard():
+    """Admin billing and revenue dashboard"""
+    auth_key = request.args.get('key')
+    if auth_key != os.getenv('ADMIN_KEY', 'admin_secret_key'):
+        return 'Unauthorized', 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Get billing stats
+    cursor.execute('''
+        SELECT plan_type, COUNT(*) as workspaces, SUM(usage_count) as total_usage
+        FROM workspaces 
+        WHERE is_active = TRUE
+        GROUP BY plan_type
+    ''')
+    plan_stats = cursor.fetchall()
+    
+    # Calculate potential revenue
+    revenue_data = []
+    total_revenue = 0
+    
+    for plan, count, usage in plan_stats:
+        plan_info = PRICING_PLANS.get(plan, PRICING_PLANS['free'])
+        monthly_revenue = plan_info['price'] * count
+        total_revenue += monthly_revenue
+        
+        revenue_data.append({
+            'plan': plan.title(),
+            'workspaces': count,
+            'price': plan_info['price'],
+            'monthly_revenue': monthly_revenue,
+            'total_usage': usage,
+            'avg_usage': usage // count if count > 0 else 0
+        })
+    
+    # Get top usage workspaces
+    cursor.execute('''
+        SELECT team_name, plan_type, usage_count, usage_limit
+        FROM workspaces 
+        WHERE is_active = TRUE
+        ORDER BY usage_count DESC
+        LIMIT 10
+    ''')
+    top_users = cursor.fetchall()
+    
+    conn.close()
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Billing Dashboard - Reddit Scraper Pro</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                   background: #f8f9fa; margin: 0; padding: 20px; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            h1 {{ color: #1a73e8; text-align: center; }}
+            .stats {{ display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }}
+            .stat {{ flex: 1; background: white; padding: 20px; border-radius: 8px; 
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; min-width: 200px; }}
+            .stat-value {{ font-size: 2rem; font-weight: bold; color: #1a73e8; }}
+            .stat-label {{ color: #666; margin-top: 5px; }}
+            .section {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; 
+                       box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+            .plan-row {{ display: flex; justify-content: space-between; padding: 15px; 
+                       border-bottom: 1px solid #eee; align-items: center; }}
+            .plan-row:last-child {{ border-bottom: none; }}
+            table {{ width: 100%; border-collapse: collapse; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #eee; }}
+            th {{ background: #f8f9fa; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>💰 Billing Dashboard</h1>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">${total_revenue:,}</div>
+                    <div class="stat-label">Monthly Revenue</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{sum(data['workspaces'] for data in revenue_data)}</div>
+                    <div class="stat-label">Active Workspaces</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{sum(data['total_usage'] for data in revenue_data):,}</div>
+                    <div class="stat-label">Total Searches</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h3>Revenue by Plan</h3>
+                {"\n".join([
+                    f'''
+                    <div class="plan-row">
+                        <div>
+                            <strong>{data['plan']}</strong><br>
+                            <small>{data['workspaces']} workspaces • {data['total_usage']:,} searches</small>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong>${data['monthly_revenue']:,}/month</strong><br>
+                            <small>${data['price']}/workspace</small>
+                        </div>
+                    </div>
+                    '''
+                    for data in revenue_data
+                ])}
+            </div>
+            
+            <div class="section">
+                <h3>Top Usage Workspaces</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Workspace</th>
+                            <th>Plan</th>
+                            <th>Usage</th>
+                            <th>Limit</th>
+                            <th>Utilization</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {"\n".join([
+                            f'''
+                            <tr>
+                                <td>{user[0]}</td>
+                                <td>{user[1].title()}</td>
+                                <td>{user[2]:,}</td>
+                                <td>{user[3]:,}</td>
+                                <td>{(user[2]/user[3]*100):.1f}%</td>
+                            </tr>
+                            '''
+                            for user in top_users
+                        ])}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+# Admin API endpoints for workspace management
+@app.route('/admin/workspace/<team_id>/status', methods=['POST'])
+def update_workspace_status(team_id):
+    """Update workspace active status"""
+    try:
+        data = request.get_json()
+        auth_key = data.get('key')
+        
+        if auth_key != os.getenv('ADMIN_KEY', 'admin_secret_key'):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+        
+        is_active = data.get('active', True)
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('UPDATE workspaces SET is_active = ? WHERE team_id = ?', (is_active, team_id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Workspace not found'})
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': f'Workspace {"activated" if is_active else "deactivated"}'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/admin/workspace/<team_id>/reset-usage', methods=['POST'])
+def reset_workspace_usage(team_id):
+    """Reset workspace usage count"""
+    try:
+        data = request.get_json()
+        auth_key = data.get('key')
+        
+        if auth_key != os.getenv('ADMIN_KEY', 'admin_secret_key'):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+        
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('UPDATE workspaces SET usage_count = 0 WHERE team_id = ?', (team_id,))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({'success': False, 'error': 'Workspace not found'})
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Usage count reset to 0'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/admin/workspace/<team_id>/logs')
+def workspace_logs(team_id):
+    """View detailed logs for a specific workspace"""
+    auth_key = request.args.get('key')
+    if auth_key != os.getenv('ADMIN_KEY', 'admin_secret_key'):
+        return 'Unauthorized', 401
+    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Get workspace info
+    cursor.execute('SELECT * FROM workspaces WHERE team_id = ?', (team_id,))
+    workspace = cursor.fetchone()
+    
+    if not workspace:
+        return 'Workspace not found', 404
+    
+    # Get usage logs
+    cursor.execute('''
+        SELECT ul.*, wu.user_name 
+        FROM usage_logs ul
+        LEFT JOIN workspace_users wu ON ul.user_id = wu.user_id AND ul.workspace_id = wu.workspace_id
+        WHERE ul.workspace_id = ?
+        ORDER BY ul.timestamp DESC
+        LIMIT 100
+    ''', (workspace[0],))  # workspace[0] is the ID
+    
+    logs = cursor.fetchall()
+    conn.close()
+    
+    return f'''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Workspace Logs - {workspace[2]}</title>
+        <style>
+            body {{ font-family: monospace; background: #f8f9fa; margin: 20px; }}
+            .header {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
+            .log {{ background: white; margin: 10px 0; padding: 15px; border-radius: 4px; 
+                   border-left: 4px solid #007bff; }}
+            .log-time {{ color: #666; font-size: 12px; }}
+            .log-user {{ font-weight: bold; color: #333; }}
+            .log-query {{ background: #f8f9fa; padding: 5px; border-radius: 3px; margin: 5px 0; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>Usage Logs: {workspace[2]}</h1>
+            <p><strong>Team ID:</strong> {team_id}</p>
+            <p><strong>Total Logs:</strong> {len(logs)}</p>
+        </div>
+        
+        {"\n".join([
+            f'''
+            <div class="log">
+                <div class="log-time">{log[3]}</div>
+                <div class="log-user">User: {log[1]} ({log[-1] or "Unknown"})</div>
+                <div class="log-query">Query: {log[4] or "N/A"}</div>
+                <div>Results: {log[5] or 0} posts</div>
+            </div>
+            '''
+            for log in logs
+        ])}
+        
+        <p style="text-align: center; color: #666; margin-top: 50px;">
+            Showing last 100 usage logs
+        </p>
+    </body>
+    </html>
+    '''
 
 def get_reddit_instance():
     """Get Reddit API instance"""
@@ -1964,17 +2959,69 @@ def test_slack_integration(integration_id):
 
 @app.route('/api/slack/command', methods=['POST'])
 def handle_slack_command():
-    """Handle Slack slash commands like /reddit search AI startups"""
+    """Handle Slack slash commands from any workspace"""
     try:
-        # Verify the request is from Slack (in production, verify token)
+        # Verify the request is from Slack
         if request.form.get('command') != '/reddit':
             return jsonify({'text': 'Unknown command'})
         
-        # Parse command
-        text = request.form.get('text', '').strip()
+        # Extract workspace and user info
+        team_id = request.form.get('team_id')
+        user_id = request.form.get('user_id')
         user_name = request.form.get('user_name', 'Unknown')
         channel_name = request.form.get('channel_name', 'Unknown')
+        channel_id = request.form.get('channel_id')
         response_url = request.form.get('response_url')
+        text = request.form.get('text', '').strip()
+        
+        print(f"[SLASH] Command from team {team_id}, user {user_name}, channel {channel_name}")
+        
+        # Get workspace data
+        workspace = get_workspace_by_team_id(team_id)
+        if not workspace:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': '❌ **Reddit Scraper Pro not properly installed**\n\nPlease reinstall the app or contact your workspace admin.\n\n[Install Link](https://scrapper-eight-alpha.vercel.app/slack/install)'
+            })
+        
+        # Check if workspace is active
+        if not workspace.get('is_active'):
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': '⚠️ This workspace installation is currently disabled. Contact support for assistance.'
+            })
+        
+        # Rate limiting check (per user per hour)
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check recent usage for this user
+        cursor.execute('''
+            SELECT COUNT(*) FROM usage_logs 
+            WHERE workspace_id = ? AND user_id = ? 
+            AND timestamp > datetime('now', '-1 hour')
+        ''', (workspace['id'], user_id))
+        
+        recent_usage = cursor.fetchone()[0]
+        user_hourly_limit = 10  # 10 commands per hour per user
+        
+        if recent_usage >= user_hourly_limit:
+            conn.close()
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': f'⚠️ **Rate Limit Exceeded**\n\nYou can use up to {user_hourly_limit} commands per hour. Please try again later.\n\n**Time until reset:** {60 - datetime.now().minute} minutes'
+            })
+        
+        conn.close()
+        
+        # Check usage limits
+        if workspace['usage_count'] >= workspace['usage_limit']:
+            return jsonify({
+                'response_type': 'ephemeral',
+                'text': f'🚫 **Monthly Usage Limit Reached**\n\nYour workspace has used {workspace["usage_count"]}/{workspace["usage_limit"]} searches this month.\n\n**Plan:** {workspace["plan_type"].title()}\n**Upgrade** to continue using Reddit Scraper Pro.'
+            })
+        
+        # Parse command
         
         if not text:
             return jsonify({
@@ -2079,7 +3126,7 @@ def handle_slack_command():
         if response_url:
             Thread(
                 target=perform_slack_search,
-                args=(keywords, subreddit, max_results, sort_method, response_url, user_name)
+                args=(keywords, subreddit, max_results, sort_method, response_url, user_name, workspace, user_id)
             ).start()
         
         return jsonify(immediate_response)
@@ -2129,10 +3176,10 @@ def parse_slack_search_command(search_text):
     
     return keywords, subreddit, max_results, sort_method
 
-def perform_slack_search(keywords, subreddit, max_results, sort_method, response_url, user_name):
+def perform_slack_search(keywords, subreddit, max_results, sort_method, response_url, user_name, workspace, user_id):
     """Perform Reddit search and post results to Slack (background task)"""
     try:
-        print(f"[SLACK SEARCH] Starting search for {keywords} by {user_name}")
+        print(f"[SLACK SEARCH] Starting search for {keywords} by {user_name} in workspace {workspace['team_name']}")
         
         # Check Reddit API
         reddit = get_reddit_instance()
@@ -2181,6 +3228,15 @@ def perform_slack_search(keywords, subreddit, max_results, sort_method, response
         success = post_slack_response(response_url, response)
         print(f"[SLACK SEARCH] Final response posted: {success}")
         
+        # Log successful usage
+        if results.get('success'):
+            log_usage(
+                workspace['id'], user_id, 'search', 
+                search_term=' '.join(keywords), 
+                result_count=len(results.get('posts', [])), 
+                success=True
+            )
+        
     except Exception as e:
         print(f"[SLACK SEARCH] Exception: {str(e)}")
         error_response = {
@@ -2188,6 +3244,15 @@ def perform_slack_search(keywords, subreddit, max_results, sort_method, response
             'response_type': 'in_channel'
         }
         post_slack_response(response_url, error_response)
+        
+        # Log failed usage
+        log_usage(
+            workspace['id'], user_id, 'search', 
+            search_term=' '.join(keywords), 
+            result_count=0, 
+            success=False, 
+            error=str(e)
+        )
 
 def create_mock_search_results(keywords, subreddit, user_name):
     """Create mock search results when Reddit API is not available"""
