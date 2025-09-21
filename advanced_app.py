@@ -1958,14 +1958,19 @@ def parse_slack_search_command(search_text):
 def perform_slack_search(keywords, subreddit, max_results, sort_method, response_url, user_name):
     """Perform Reddit search and post results to Slack (background task)"""
     try:
-        # Simulate the search API call
+        print(f"[SLACK SEARCH] Starting search for {keywords} by {user_name}")
+        
+        # Check Reddit API
         reddit = get_reddit_instance()
         if not reddit:
-            post_slack_response(response_url, {
-                'text': '❌ Reddit API not configured. Please contact administrator.',
-                'response_type': 'ephemeral'
-            })
+            print("[SLACK SEARCH] Reddit API not configured, sending mock results")
+            # Send mock results instead of failing
+            mock_response = create_mock_search_results(keywords, subreddit, user_name)
+            success = post_slack_response(response_url, mock_response)
+            print(f"[SLACK SEARCH] Mock response posted: {success}")
             return
+        
+        print(f"[SLACK SEARCH] Reddit API available, performing real search")
         
         # Create search parameters similar to web interface
         search_query = ' OR '.join(keywords)
@@ -1984,24 +1989,98 @@ def perform_slack_search(keywords, subreddit, max_results, sort_method, response
             sentiment_filter='all'
         )
         
+        print(f"[SLACK SEARCH] Search completed. Success: {results['success']}")
+        
         if results['success']:
             # Format success response
             posts = results['posts']
             response = format_slack_search_results(posts, keywords, subreddit, user_name)
+            print(f"[SLACK SEARCH] Formatted results for {len(posts)} posts")
         else:
             # Format error response
             response = {
                 'text': f'❌ Search failed: {results["error"]}',
-                'response_type': 'ephemeral'
+                'response_type': 'in_channel'
             }
+            print(f"[SLACK SEARCH] Search failed: {results['error']}")
         
-        post_slack_response(response_url, response)
+        success = post_slack_response(response_url, response)
+        print(f"[SLACK SEARCH] Final response posted: {success}")
         
     except Exception as e:
-        post_slack_response(response_url, {
+        print(f"[SLACK SEARCH] Exception: {str(e)}")
+        error_response = {
             'text': f'❌ Search error: {str(e)}',
-            'response_type': 'ephemeral'
-        })
+            'response_type': 'in_channel'
+        }
+        post_slack_response(response_url, error_response)
+
+def create_mock_search_results(keywords, subreddit, user_name):
+    """Create mock search results when Reddit API is not available"""
+    mock_posts = [
+        {
+            'title': f'Mock post about {keywords[0]} - AI breakthrough announced',
+            'score': 156,
+            'num_comments': 89,
+            'subreddit': 'technology',
+            'url': 'https://reddit.com/r/technology/mock1',
+            'engagement_rate': 15.2,
+            'sentiment': 'positive'
+        },
+        {
+            'title': f'Discussion: {keywords[0]} impact on future tech',
+            'score': 98,
+            'num_comments': 67,
+            'subreddit': 'futurology', 
+            'url': 'https://reddit.com/r/futurology/mock2',
+            'engagement_rate': 12.8,
+            'sentiment': 'positive'
+        },
+        {
+            'title': f'{keywords[0]} startup raises $50M in Series A',
+            'score': 78,
+            'num_comments': 45,
+            'subreddit': 'startups',
+            'url': 'https://reddit.com/r/startups/mock3', 
+            'engagement_rate': 11.4,
+            'sentiment': 'neutral'
+        }
+    ]
+    
+    return {
+        'text': f'✨ <@{user_name}> found 3 posts for "{" ".join(keywords)}" (Demo Results)!',
+        'response_type': 'in_channel',
+        'attachments': [
+            {
+                'color': 'good',
+                'title': '📊 Demo Search Results',
+                'fields': [
+                    {'title': 'Keywords', 'value': ', '.join(keywords), 'short': True},
+                    {'title': 'Subreddit', 'value': f'r/{subreddit}' if subreddit != 'all' else 'all of Reddit', 'short': True},
+                    {'title': 'Posts Found', 'value': '3 (demo)', 'short': True},
+                    {'title': 'Avg Upvotes', 'value': '110.7', 'short': True}
+                ],
+                'footer': 'Reddit Scraper Pro - Demo Mode',
+                'footer_icon': 'https://reddit.com/favicon.ico'
+            },
+            {
+                'color': '#ff6b35',
+                'title': '🔥 Top Demo Posts',
+                'text': '\n'.join([
+                    f'🔥 **{post["title"][:60]}**{"..." if len(post["title"]) > 60 else ""}\n'
+                    f'   👆 {post["score"]} upvotes • 💬 {post["num_comments"]} comments • r/{post["subreddit"]}\n'
+                    f'   🔗 <{post["url"]}|View Post>\n'
+                    for post in mock_posts
+                ]),
+                'mrkdwn_in': ['text']
+            },
+            {
+                'color': '#1a73e8',
+                'title': 'ℹ️ Note',
+                'text': 'This is demo data. For live Reddit results, configure Reddit API credentials.',
+            }
+        ]
+    }
 
 def perform_reddit_search(reddit, keywords, subreddit, max_results, sort_method, days_back, min_score, min_comments, min_engagement, sentiment_filter):
     """Core Reddit search function (reusable for both web and Slack)"""
@@ -2180,10 +2259,29 @@ def post_slack_response(response_url, data):
     """Post response to Slack using response URL"""
     try:
         import requests
-        response = requests.post(response_url, json=data, timeout=10)
-        return response.status_code == 200
+        print(f"[SLACK POST] Posting to: {response_url[:50]}...")
+        print(f"[SLACK POST] Data preview: {str(data)[:200]}...")
+        
+        response = requests.post(response_url, json=data, timeout=15)
+        
+        print(f"[SLACK POST] Response status: {response.status_code}")
+        print(f"[SLACK POST] Response text: {response.text[:200]}")
+        
+        if response.status_code == 200:
+            print(f"[SLACK POST] Success - message posted to Slack")
+            return True
+        else:
+            print(f"[SLACK POST] Failed - status {response.status_code}: {response.text}")
+            return False
+            
+    except requests.exceptions.Timeout:
+        print(f"[SLACK POST] Timeout posting to Slack")
+        return False
+    except requests.exceptions.ConnectionError:
+        print(f"[SLACK POST] Connection error posting to Slack")
+        return False
     except Exception as e:
-        print(f'Failed to post Slack response: {e}')
+        print(f"[SLACK POST] Exception posting to Slack: {e}")
         return False
 
 @app.route('/health')
